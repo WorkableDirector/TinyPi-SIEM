@@ -29,7 +29,7 @@ The system collects logs using syslog, stores them in SQLite, analyzes them thro
 2. Build and run the container:
 
    ```bash
-   sudo docker-compose up --build -d
+   sudo docker compose up --build -d
    ```
 3. Access the dashboard at `http://<Host IP running TinyPi>:8000`.
 
