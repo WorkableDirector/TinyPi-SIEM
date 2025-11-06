@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TinyPi SIEM</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    :root { --pico-border-radius: 12px; }
+    .stat { display:flex; gap:8px; align-items:baseline; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap:16px; }
+    canvas { background: var(--pico-muted-border-color); border-radius: 8px; padding: 8px; }
+    footer { margin-top: 2rem; opacity: .7; }
+  </style>
+</head>
+<body>
+<main class="container">
+  <h1>TinyPi SIEM <small style="font-size:50%;">prototype</small></h1>
+  <div class="grid">
+    <article>
+      <h3>Overview</h3>
+      <div class="stat"><strong>Total logs:</strong> <span>{{ total_logs }}</span></div>
+      <div class="stat"><strong>Total alerts:</strong> <span>{{ total_alerts }}</span></div>
+      <details>
+        <summary>Top sources (apps)</summary>
+        <ul>
+          {% for r in top_apps %}
+            <li>{{ r['app'] or '(unknown)' }} — {{ r['c'] }}</li>
+          {% endfor %}
+        </ul>
+      </details>
+      <nav>
+        <a role="button" href="/logs">View logs</a>
+        <a role="button" href="/alerts" class="secondary">View alerts</a>
+      </nav>
+    </article>
+    <article>
+      <h3>Logs by hour</h3>
+      <canvas id="byHour"></canvas>
+    </article>
+    <article>
+      <h3>Logs by severity</h3>
+      <canvas id="bySev"></canvas>
+    </article>
+    <article>
+      <h3>Top hosts</h3>
+      <canvas id="byHost"></canvas>
+    </article>
+  </div>
+  <footer>Raspberry Pi 5 • FastAPI • SQLite • UDP syslog ingest</footer>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+async function load() {
+  const res = await fetch('/api/stats');
+  const data = await res.json();
+
+  const hLabels = data.by_hour.map(x => x.hour);
+  const hVals = data.by_hour.map(x => x.c);
+  new Chart(document.getElementById('byHour'), {
+    type: 'line',
+    data: { labels: hLabels, datasets: [{ label: 'Logs/hour', data: hVals }]},
+    options: { responsive: true }
+  });
+
+  const sLabels = data.by_sev.map(x => x.severity ?? 'unknown');
+  const sVals = data.by_sev.map(x => x.c);
+  new Chart(document.getElementById('bySev'), {
+    type: 'bar',
+    data: { labels: sLabels, datasets: [{ label: 'By severity', data: sVals }]},
+    options: { responsive: true }
+  });
+
+  const hostLabels = data.by_host.map(x => x.host ?? 'unknown');
+  const hostVals = data.by_host.map(x => x.c);
+  new Chart(document.getElementById('byHost'), {
+    type: 'bar',
+    data: { labels: hostLabels, datasets: [{ label: 'Top hosts', data: hostVals }]},
+    options: { responsive: true }
+  });
+}
+load();
+</script>
+</body>
+</html>

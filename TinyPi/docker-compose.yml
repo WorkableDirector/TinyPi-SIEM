@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  siemapp:
+    build: ./app
+    ports:
+      - "8000:8000"
+      - "5514:5514/udp"
+    environment:
+      - SIEM_DB=/data/siem.db
+      - SIEM_UDP_PORT=5514
+      - SIEM_HTTP_INGEST_TOKEN=changeme-token
+    volumes:
+      - siemdata:/data
+
+volumes:
+  siemdata:
+
