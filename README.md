@@ -10,7 +10,7 @@ The system collects logs using syslog, stores them in SQLite, analyzes them thro
 
 ## Requirements
 
-* Raspberry Pi OS Lite or AlmaLinux
+* Raspberry Pi OS Lite or any Ubuntu based distro with Docker.
 * Python 3.10+
 * SQLite 3
 * rsyslog or syslog-ng
