@@ -3,7 +3,7 @@ import datetime as dt
 import os
 import re
 import sqlite3
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Iterable
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -14,6 +14,49 @@ from pydantic import BaseModel
 DB_PATH = os.environ.get("SIEM_DB", "siem.db")
 UDP_PORT = int(os.environ.get("SIEM_UDP_PORT", "5514"))
 HTTP_INGEST_TOKEN = os.environ.get("SIEM_HTTP_INGEST_TOKEN", "changeme-token")
+
+DEFAULT_SETTINGS = {
+    "auto_refresh": "true",
+    "enable_ssh_failed_login": "true",
+    "enable_sudo_auth_failure": "true",
+    "enable_root_shell": "true",
+    "enable_kernel_oom": "true",
+}
+
+DETECTION_RULES = [
+    {
+        "id": "ssh_failed_login",
+        "name": "SSH failed login", 
+        "severity": "medium",
+        "description": "Detects repeated failed SSH logins that could indicate brute-force activity.",
+        "app": "sshd",
+        "pattern": re.compile(r"(Failed password|Invalid user|error: PAM: Authentication failure)", re.IGNORECASE),
+    },
+    {
+        "id": "sudo_auth_failure",
+        "name": "Sudo authentication failure",
+        "severity": "medium",
+        "description": "Flags sudo authentication failures which may highlight privilege escalation attempts.",
+        "app": "sudo",
+        "pattern": re.compile(r"authentication failure", re.IGNORECASE),
+    },
+    {
+        "id": "root_shell",
+        "name": "Root shell opened",
+        "severity": "high",
+        "description": "Highlights when a shell session is opened for the root account.",
+        "app": None,
+        "pattern": re.compile(r"session opened for user root", re.IGNORECASE),
+    },
+    {
+        "id": "kernel_oom",
+        "name": "Kernel out-of-memory",
+        "severity": "high",
+        "description": "Raises awareness about kernel out-of-memory conditions which can destabilize systems.",
+        "app": None,
+        "pattern": re.compile(r"Out of memory: Kill process", re.IGNORECASE),
+    },
+]
 
 app = FastAPI(title="TinyPi SIEM", version="0.1.0")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -54,7 +97,16 @@ def init_db():
             FOREIGN KEY(related_log_id) REFERENCES logs(id)
         );
         CREATE INDEX IF NOT EXISTS idx_alerts_ts ON alerts(ts);
+
+        CREATE TABLE IF NOT EXISTS settings(
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
         """
+    )
+    cur.executemany(
+        "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO NOTHING",
+        list(DEFAULT_SETTINGS.items()),
     )
     conn.commit()
     conn.close()
@@ -137,14 +189,49 @@ def parse_syslog(line: str) -> Dict[str, Any]:
         pass
     return out
 
-FAILED_SSH_PAT = re.compile(r"(Failed password|Invalid user|error: PAM: Authentication failure)", re.IGNORECASE)
+def get_settings() -> Dict[str, str]:
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT key, value FROM settings")
+    rows = cur.fetchall()
+    conn.close()
+    settings = {row["key"]: row["value"] for row in rows}
+    merged = dict(DEFAULT_SETTINGS)
+    merged.update(settings)
+    return merged
+
+def set_setting(key: str, value: str):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (key, value),
+    )
+    conn.commit()
+    conn.close()
+
+def detection_settings_key(rule_id: str) -> str:
+    return f"enable_{rule_id}"
+
+def detection_rules() -> Iterable[Dict[str, Any]]:
+    return DETECTION_RULES
 
 def analyze_and_alert(log_id: int, parsed: Dict[str, Any]):
     msg = (parsed.get("msg") or "")
     appname = (parsed.get("app") or "").lower()
-    if appname == "sshd" and FAILED_SSH_PAT.search(msg):
-        desc = f"Possible SSH brute-force attempt: {msg[:180]}"
-        insert_alert("ssh_failed_login", "medium", desc, related_log_id=log_id)
+    settings = get_settings()
+    for rule in detection_rules():
+        enabled_key = detection_settings_key(rule["id"])
+        if settings.get(enabled_key, "true").lower() == "false":
+            continue
+        expected_app = rule.get("app")
+        if expected_app and expected_app.lower() != appname:
+            continue
+        pattern = rule.get("pattern")
+        if pattern and not pattern.search(msg):
+            continue
+        desc = f"{rule['description']} Snippet: {msg[:160]}"
+        insert_alert(rule["id"], rule["severity"], desc, related_log_id=log_id)
 
 class IngestItem(BaseModel):
     token: str
@@ -224,8 +311,55 @@ def api_stats():
     by_sev = [dict(r) for r in cur.fetchall()]
     cur.execute("SELECT host, COUNT(*) c FROM logs GROUP BY host ORDER BY c DESC LIMIT 10")
     by_host = [dict(r) for r in cur.fetchall()]
+    cur.execute("SELECT * FROM logs ORDER BY id DESC LIMIT 5")
+    latest_logs = [dict(r) for r in cur.fetchall()]
+    cur.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 5")
+    latest_alerts = [dict(r) for r in cur.fetchall()]
+    cur.execute("SELECT type, COUNT(*) c, MAX(ts) last_ts FROM alerts GROUP BY type")
+    detection_counts = {row["type"]: {"count": row["c"], "last_ts": row["last_ts"]} for row in cur.fetchall()}
     conn.close()
-    return {"by_hour": by_hour, "by_sev": by_sev, "by_host": by_host}
+    settings = get_settings()
+    detections = []
+    for rule in detection_rules():
+        key = detection_settings_key(rule["id"])
+        stats = detection_counts.get(rule["id"], {})
+        detections.append(
+            {
+                "id": rule["id"],
+                "name": rule["name"],
+                "severity": rule["severity"],
+                "description": rule["description"],
+                "enabled": settings.get(key, "true").lower() != "false",
+                "triggered_count": stats.get("count", 0),
+                "last_seen": stats.get("last_ts"),
+            }
+        )
+    return {
+        "by_hour": by_hour,
+        "by_sev": by_sev,
+        "by_host": by_host,
+        "latest_logs": latest_logs,
+        "latest_alerts": latest_alerts,
+        "detections": detections,
+    }
+
+@app.get("/api/settings")
+def api_get_settings():
+    return get_settings()
+
+class SettingUpdate(BaseModel):
+    key: str
+    value: str
+
+@app.post("/api/settings")
+def api_update_setting(update: SettingUpdate):
+    if update.key not in DEFAULT_SETTINGS and not update.key.startswith("enable_"):
+        raise HTTPException(status_code=400, detail="Unknown setting")
+    normalized = update.value
+    if normalized.lower() in {"true", "false"}:
+        normalized = normalized.lower()
+    set_setting(update.key, normalized)
+    return {"status": "ok", "settings": get_settings()}
 
 class SyslogProto(asyncio.DatagramProtocol):
     def datagram_received(self, data: bytes, addr):

@@ -11,6 +11,15 @@
     .grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap:16px; }
     canvas { background: var(--pico-muted-border-color); border-radius: 8px; padding: 8px; }
     footer { margin-top: 2rem; opacity: .7; }
+    .live { list-style:none; padding-left:0; display:flex; flex-direction:column; gap:.75rem; }
+    .live li { background: var(--pico-muted-border-color); border-radius: 10px; padding:.75rem; display:grid; gap:.35rem; }
+    .badge { display:inline-flex; align-items:center; justify-content:center; min-width:2.2rem; border-radius:999px; font-size:.75rem; padding:.2rem .6rem; background: var(--pico-secondary-background); color: var(--pico-primary); text-transform:uppercase; letter-spacing:.04em; }
+    .badge.severity-high { background: #f03e3e; color: white; }
+    .badge.severity-medium { background: #ffa94d; color: #3b2000; }
+    .badge.severity-low { background: #4dabf7; color: #041c2c; }
+    .numeric { text-align:right; }
+    table { width:100%; }
+    .rule-name { font-weight:600; }
   </style>
 </head>
 <body>
@@ -46,40 +55,194 @@
       <h3>Top hosts</h3>
       <canvas id="byHost"></canvas>
     </article>
+    <article>
+      <h3>Live activity</h3>
+      <p class="muted">Latest log events</p>
+      <ul class="live" id="latestLogs"></ul>
+      <p class="muted">Recent alerts</p>
+      <ul class="live" id="latestAlerts"></ul>
+    </article>
+    <article>
+      <h3>Detection signatures</h3>
+      <p class="muted">Enabled analytics for spotting suspicious behaviour.</p>
+      <table>
+        <thead>
+          <tr><th>Signature</th><th>Severity</th><th class="numeric">Hits</th><th>Last seen</th></tr>
+        </thead>
+        <tbody id="detectionTable"></tbody>
+      </table>
+    </article>
+    <article>
+      <h3>Settings</h3>
+      <p class="muted">Toggle analytics without restarting the collector.</p>
+      <form id="settingsForm">
+        <fieldset>
+          <legend>Dashboard</legend>
+          <label>
+            <input type="checkbox" role="switch" data-setting="auto_refresh" id="setting-auto-refresh" checked>
+            Auto refresh dashboard data
+          </label>
+        </fieldset>
+        <fieldset>
+          <legend>Detection signatures</legend>
+          <label>
+            <input type="checkbox" role="switch" data-setting="enable_ssh_failed_login" checked>
+            SSH failed login detection
+          </label>
+          <label>
+            <input type="checkbox" role="switch" data-setting="enable_sudo_auth_failure" checked>
+            Sudo authentication failure detection
+          </label>
+          <label>
+            <input type="checkbox" role="switch" data-setting="enable_root_shell" checked>
+            Root shell session detection
+          </label>
+          <label>
+            <input type="checkbox" role="switch" data-setting="enable_kernel_oom" checked>
+            Kernel out-of-memory detection
+          </label>
+        </fieldset>
+      </form>
+    </article>
   </div>
   <footer>Raspberry Pi 5 • FastAPI • SQLite • UDP syslog ingest</footer>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-async function load() {
-  const res = await fetch('/api/stats');
-  const data = await res.json();
+const charts = {};
+let dashboardSettings = {};
+let refreshTimer;
 
+function ensureChart(id, config) {
+  if (charts[id]) {
+    charts[id].data = config.data;
+    charts[id].options = config.options;
+    charts[id].update();
+    return;
+  }
+  charts[id] = new Chart(document.getElementById(id), config);
+}
+
+function renderCharts(data) {
   const hLabels = data.by_hour.map(x => x.hour);
   const hVals = data.by_hour.map(x => x.c);
-  new Chart(document.getElementById('byHour'), {
+  ensureChart('byHour', {
     type: 'line',
-    data: { labels: hLabels, datasets: [{ label: 'Logs/hour', data: hVals }]},
+    data: { labels: hLabels, datasets: [{ label: 'Logs/hour', data: hVals, tension: 0.2, fill: true }]},
     options: { responsive: true }
   });
 
   const sLabels = data.by_sev.map(x => x.severity ?? 'unknown');
   const sVals = data.by_sev.map(x => x.c);
-  new Chart(document.getElementById('bySev'), {
+  ensureChart('bySev', {
     type: 'bar',
-    data: { labels: sLabels, datasets: [{ label: 'By severity', data: sVals }]},
+    data: { labels: sLabels, datasets: [{ label: 'By severity', data: sVals, backgroundColor: '#2c7be5' }]},
     options: { responsive: true }
   });
 
   const hostLabels = data.by_host.map(x => x.host ?? 'unknown');
   const hostVals = data.by_host.map(x => x.c);
-  new Chart(document.getElementById('byHost'), {
+  ensureChart('byHost', {
     type: 'bar',
-    data: { labels: hostLabels, datasets: [{ label: 'Top hosts', data: hostVals }]},
-    options: { responsive: true }
+    data: { labels: hostLabels, datasets: [{ label: 'Top hosts', data: hostVals, backgroundColor: '#82c91e' }]},
+    options: { responsive: true, plugins: { legend: { display: false } } }
   });
 }
-load();
+
+function renderLive(data) {
+  const latestLogs = document.getElementById('latestLogs');
+  latestLogs.innerHTML = data.latest_logs.map(row => `
+    <li>
+      <span class="badge">${row.severity ?? '-'}</span>
+      <strong>${row.host ?? 'unknown'}</strong>
+      <small>${row.ts ?? ''}</small>
+      <div>${row.msg ?? ''}</div>
+    </li>`).join('') || '<li>No log data yet.</li>';
+
+  const latestAlerts = document.getElementById('latestAlerts');
+  latestAlerts.innerHTML = data.latest_alerts.map(row => `
+    <li>
+      <span class="badge severity-${row.severity}">${row.severity}</span>
+      <strong>${row.type}</strong>
+      <small>${row.ts}</small>
+      <div>${row.description}</div>
+    </li>`).join('') || '<li>No alerts have been raised.</li>';
+}
+
+function renderDetections(data) {
+  const tbody = document.getElementById('detectionTable');
+  tbody.innerHTML = data.detections.map(row => `
+    <tr>
+      <td>
+        <div class="rule-name">${row.name}</div>
+        <small class="muted">${row.description}${row.enabled ? '' : ' (disabled)'}</small>
+      </td>
+      <td><span class="badge severity-${row.severity}">${row.severity}</span></td>
+      <td class="numeric">${row.triggered_count}</td>
+      <td>${row.last_seen ? row.last_seen : '—'}</td>
+    </tr>`).join('');
+}
+
+async function refreshDashboard() {
+  const res = await fetch('/api/stats');
+  const data = await res.json();
+  renderCharts(data);
+  renderLive(data);
+  renderDetections(data);
+}
+
+function applySettings(settings) {
+  dashboardSettings = settings;
+  document.querySelectorAll('[data-setting]').forEach(el => {
+    const key = el.dataset.setting;
+    const value = settings[key];
+    if (typeof value !== 'undefined') {
+      el.checked = value !== 'false';
+    }
+  });
+  scheduleRefresh();
+}
+
+function scheduleRefresh() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+  if (dashboardSettings.auto_refresh !== 'false') {
+    refreshTimer = setInterval(refreshDashboard, 10000);
+  }
+}
+
+async function updateSetting(key, value) {
+  await fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, value }),
+  });
+  const latest = await fetch('/api/settings');
+  applySettings(await latest.json());
+}
+
+document.getElementById('settingsForm').addEventListener('change', async (event) => {
+  const target = event.target;
+  if (!target.dataset.setting) {
+    return;
+  }
+  const key = target.dataset.setting;
+  const value = target.checked ? 'true' : 'false';
+  await updateSetting(key, value);
+  if (key.startsWith('enable_')) {
+    await refreshDashboard();
+  }
+});
+
+async function init() {
+  const settings = await fetch('/api/settings').then(r => r.json());
+  applySettings(settings);
+  await refreshDashboard();
+}
+
+init();
 </script>
 </body>
 </html>
