@@ -6,7 +6,7 @@ import sqlite3
 from typing import Optional, Dict, Any
 
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -193,6 +193,17 @@ def logs_page(request: Request, limit: int = 200):
     rows = cur.fetchall()
     conn.close()
     return templates.TemplateResponse("logs.html", {"request": request, "rows": rows})
+
+
+@app.post("/logs/clear")
+def clear_logs():
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM alerts")
+    cur.execute("DELETE FROM logs")
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/logs", status_code=303)
 
 @app.get("/alerts", response_class=HTMLResponse)
 def alerts_page(request: Request, limit: int = 200):
