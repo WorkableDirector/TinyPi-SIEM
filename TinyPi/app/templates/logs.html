@@ -11,6 +11,9 @@
 <main class="container">
   <h2>Recent Logs</h2>
   <a href="/">← Back</a>
+  <form method="post" action="/logs/clear" style="margin-top:1rem">
+    <button type="submit" class="contrast">Clear All Logs</button>
+  </form>
   <table>
     <thead><tr><th>ID</th><th>Time (UTC)</th><th>Host</th><th>App</th><th>Message</th></tr></thead>
     <tbody>
