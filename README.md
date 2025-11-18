@@ -24,7 +24,7 @@ The system collects logs using syslog, stores them in SQLite, analyzes them thro
 1. Clone the repository:
 
    ```
-   git clone [https://github.com/WorkableDirector/TinyPi-SIEM](https://github.com/WorkableDirector/TinyPi-SIEM)
+   git clone [https://github.com/WorkableDirector/TinyPi-SIEM]
    cd TinyPi-SIEM
    cd TinyPi
    ```
@@ -32,7 +32,7 @@ The system collects logs using syslog, stores them in SQLite, analyzes them thro
 
     If you are using **UFW** (Uncomplicated Firewall) on your host machine, you must open the required ports before running the container. Run these commands:
 
-    ```bash
+    ```
     sudo ufw allow 8000/tcp
     sudo ufw allow 5514/udp
     sudo ufw reload
