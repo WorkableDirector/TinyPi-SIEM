@@ -2,18 +2,20 @@ version: "3.9"
 
 services:
   siem:
-    build: .
     container_name: tinypi-siem
+    build:
+      context: .              
+      dockerfile: app/Dockerfile  
     ports:
-      - "8000:8000"      # Dashboard
-      - "5514:5514/udp"  # Syslog 
+      - "8000:8000"
+      - "5514:5514/udp"
     cap_add:
-      - NET_ADMIN        
+      - NET_ADMIN
     restart: unless-stopped
     environment:
       - SIEM_DB=/data/events.db
-      - SIEM_INTERFACE=eth0  
-      - PYTHONUNBUFFERED=1   
+      - SIEM_INTERFACE=eth0
+      - PYTHONUNBUFFERED=1
     volumes:
       - siem_data:/data
 
