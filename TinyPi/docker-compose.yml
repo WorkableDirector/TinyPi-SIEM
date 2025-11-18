@@ -2,13 +2,13 @@ services:
   siem:
     container_name: tinypi-siem
     build: ./app           
-    network_mode: "host"
+    network_mode: "host"    
     cap_add:
-      - NET_ADMIN
+      - NET_ADMIN           
     restart: unless-stopped
     environment:
       - SIEM_DB=/data/events.db
-      - SIEM_INTERFACE=eth0  # Change this to your actual interface
+      - SIEM_INTERFACE=eth0 
       - SIEM_PORT=8000
       - PYTHONUNBUFFERED=1
     volumes:
