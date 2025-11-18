@@ -3,3 +3,4 @@ uvicorn[standard]==0.30.6
 jinja2==3.1.4
 scapy==2.5.0
 netifaces==0.11.0
+python-multipart
