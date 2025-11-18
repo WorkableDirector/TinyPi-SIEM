@@ -1,5 +1,5 @@
 # TinyPi-SIEM
-TinyPi is a lightweight SIEM software that allows you to view and monitor threats, vulnerabilites, and more by using a simple Raspberry Pi-5)
+TinyPi is a lightweight SIEM software that allows you to view and monitor threats, vulnerabilites, and more by a RaspberryPi or any other machine running an Ubuntu based distribution. 
 
 ## Caution
 This is a very early prototype!! Most features will not work and only the basic dashboard is working.
@@ -23,7 +23,7 @@ The system collects logs using syslog, stores them in SQLite, analyzes them thro
 
 1. Clone the repository:
 
-   ```bash
+   ```
    git clone [https://github.com/WorkableDirector/TinyPi-SIEM](https://github.com/WorkableDirector/TinyPi-SIEM)
    cd TinyPi-SIEM
    cd TinyPi
@@ -41,7 +41,7 @@ The system collects logs using syslog, stores them in SQLite, analyzes them thro
 
 3. Build and run the container:
 
-   ```bash
+   ```
    sudo docker compose up --build -d
    ```
 4. Access the dashboard at `http://<Host IP running TinyPi>:8000`.
