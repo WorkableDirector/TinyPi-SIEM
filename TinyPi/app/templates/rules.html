@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Rules Manager • TinyPi SIEM</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+</head>
+<body>
+<main class="container">
+  <nav>
+    <ul><li><strong>🛡️ TinyPi SIEM</strong></li></ul>
+    <ul>
+      <li><a href="/">Dashboard</a></li>
+      <li><a href="/logs">Logs</a></li>
+      <li><a href="/alerts">Alerts</a></li>
+      <li><a href="/rules" class="contrast">Rules</a></li>
+      <li><a href="/simulate">Simulate</a></li>
+    </ul>
+  </nav>
+
+  <h2>Detection Rules</h2>
+  <p>Configure what the system should flag as suspicious.</p>
+
+  <article>
+    <header><strong>Add Custom Rule</strong></header>
+    <form action="/rules/add" method="POST" class="grid">
+      <input type="text" name="name" placeholder="Rule Name (e.g. Nmap Scan)" required>
+      <select name="severity">
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+        <option value="critical">Critical</option>
+      </select>
+      <select name="source">
+        <option value="packet">Network Packet</option>
+        <option value="syslog">Syslog</option>
+      </select>
+      <input type="text" name="pattern" placeholder="Regex Pattern (e.g. 'nmap')" required>
+      <button type="submit">Save Rule</button>
+    </form>
+  </article>
+
+  <table>
+    <thead><tr><th>Name</th><th>Source</th><th>Severity</th><th>Regex Pattern</th><th>Action</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><strong>{{ r.name }}</strong></td>
+        <td>{{ r.source }}</td>
+        <td>{{ r.severity }}</td>
+        <td><code>{{ r.pattern }}</code></td>
+        <td><a href="/rules/delete/{{ r.id }}" role="button" class="outline secondary" style="padding:2px 10px; font-size:0.8em;">Delete</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</main>
+</body>
+</html>
