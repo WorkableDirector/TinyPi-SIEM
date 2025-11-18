@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Attack Simulator • TinyPi SIEM</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+</head>
+<body>
+<main class="container">
+  <nav>
+    <ul><li><strong>🛡️ TinyPi SIEM</strong></li></ul>
+    <ul>
+      <li><a href="/">Dashboard</a></li>
+      <li><a href="/logs">Logs</a></li>
+      <li><a href="/alerts">Alerts</a></li>
+      <li><a href="/rules">Rules</a></li>
+      <li><a href="/simulate" class="contrast">Simulate</a></li>
+    </ul>
+  </nav>
+
+  <h2>Attack Simulator</h2>
+  <p>Inject fake payloads into the system to test if your rules are working.</p>
+
+  <div class="grid">
+    <!-- Manual Injection -->
+    <article>
+      <header><strong>Custom Injection</strong></header>
+      <form action="/simulate/attack" method="POST">
+        <label>Simulation Source
+            <select name="source">
+                <option value="packet">Network Packet</option>
+                <option value="syslog">Syslog Message</option>
+            </select>
+        </label>
+        <label>Payload / Message
+            <textarea name="payload" rows="3" placeholder="e.g. UNION SELECT * FROM users"></textarea>
+        </label>
+        <button type="submit" class="contrast">Fire Attack</button>
+      </form>
+    </article>
+
+    <!-- One Click Tests -->
+    <article>
+      <header><strong>Quick Tests (Based on Active Rules)</strong></header>
+      {% for r in rules %}
+      <form action="/simulate/attack" method="POST" style="margin-bottom: 10px;">
+        <input type="hidden" name="source" value="{{ r.source }}">
+        <!-- We strip regex chars to make a 'clean' string that matches the regex -->
+        <input type="hidden" name="payload" value="SIMULATED ATTACK: {{ r.pattern | replace('(',' ') | replace(')',' ') | replace('|',' ') }}">
+        <button type="submit" class="outline">Trigger: {{ r.name }}</button>
+      </form>
+      {% endfor %}
+    </article>
+  </div>
+</main>
+</body>
+</html>
