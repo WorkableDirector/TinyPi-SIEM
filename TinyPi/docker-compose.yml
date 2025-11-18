@@ -1,11 +1,7 @@
-version: "3.9"
-
 services:
   siem:
     container_name: tinypi-siem
-    build:
-      context: .              
-      dockerfile: app/Dockerfile  
+    build: ./app           
     ports:
       - "8000:8000"
       - "5514:5514/udp"
