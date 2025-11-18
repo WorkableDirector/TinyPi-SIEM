@@ -7,7 +7,7 @@ import threading
 import logging
 from typing import List, Dict, Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -17,55 +17,24 @@ from scapy.all import sniff, IP, TCP, UDP, Raw
 DB_PATH = os.environ.get("SIEM_DB", "/data/siem.db")
 UDP_PORT = 5514
 SNIFF_INTERFACE = os.environ.get("SIEM_INTERFACE", "eth0")
+WEB_PORT = int(os.environ.get("SIEM_PORT", 8000))
 
-# --- Signatures (Rules) ---
-DETECTION_RULES = [
-    {
-        "id": "ssh_brute",
-        "source": "syslog",
-        "name": "SSH Brute Force", 
-        "severity": "medium",
-        "pattern": re.compile(r"(Failed password|Invalid user|error: PAM: Authentication failure)", re.IGNORECASE),
-    },
-    {
-        "id": "sudo_abuse",
-        "source": "syslog",
-        "name": "Sudo Auth Failure",
-        "severity": "medium",
-        "pattern": re.compile(r"authentication failure", re.IGNORECASE),
-    },
-    {
-        "id": "sql_injection",
-        "source": "packet",
-        "name": "SQL Injection Attempt",
-        "severity": "critical",
-        "pattern": re.compile(r"(UNION SELECT|OR 1=1|DROP TABLE|Waitfor delay)", re.IGNORECASE),
-    },
-    {
-        "id": "xss_attempt",
-        "source": "packet",
-        "name": "XSS Script Injection",
-        "severity": "medium",
-        "pattern": re.compile(r"(<script>|javascript:alert)", re.IGNORECASE),
-    },
-    {
-        "id": "passwd_file",
-        "source": "packet",
-        "name": "Sensitive File Access",
-        "severity": "high",
-        "pattern": re.compile(r"(/etc/passwd|/win.ini)", re.IGNORECASE),
-    },
+# --- Default Rules (Seeded on first run) ---
+DEFAULT_RULES = [
+    ("ssh_brute", "syslog", "SSH Brute Force", "medium", "(Failed password|Invalid user|error: PAM: Authentication failure)"),
+    ("sudo_abuse", "syslog", "Sudo Auth Failure", "medium", "authentication failure"),
+    ("sql_injection", "packet", "SQL Injection Attempt", "critical", "(UNION SELECT|OR 1=1|DROP TABLE|Waitfor delay)"),
+    ("xss_attempt", "packet", "XSS Script Injection", "high", "(<script>|javascript:alert)"),
+    ("passwd_file", "packet", "Sensitive File Access", "high", "(/etc/passwd|/win.ini)"),
 ]
 
-app = FastAPI(title="TinyPi SIEM", version="2.1")
-# Mount static files (ensure folder exists even if empty)
+app = FastAPI(title="TinyPi SIEM", version="3.0")
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # --- Database Helpers ---
 def dict_factory(cursor, row):
-    """Converts SQLite rows to Python Dictionaries"""
     d = {}
     for idx, col in enumerate(cursor.description):
         d[col[0]] = row[idx]
@@ -73,7 +42,7 @@ def dict_factory(cursor, row):
 
 def db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = dict_factory  # This fixes the JSON serialization errors
+    conn.row_factory = dict_factory
     return conn
 
 def init_db():
@@ -91,6 +60,15 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_events_id ON events(id);
         
+        CREATE TABLE IF NOT EXISTS rules(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule_id TEXT,
+            source TEXT,
+            name TEXT,
+            severity TEXT,
+            pattern TEXT
+        );
+
         CREATE TABLE IF NOT EXISTS alerts(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts TEXT NOT NULL,
@@ -100,10 +78,20 @@ def init_db():
             related_event_id INTEGER
         );
     """)
+    
+    # Seed rules if empty
+    cur.execute("SELECT COUNT(*) as c FROM rules")
+    if cur.fetchone()['c'] == 0:
+        print("[*] Seeding default detection rules...")
+        cur.executemany(
+            "INSERT INTO rules (rule_id, source, name, severity, pattern) VALUES (?,?,?,?,?)",
+            DEFAULT_RULES
+        )
+
     conn.commit()
     conn.close()
 
-# --- Data Ingestion ---
+# --- Core Logic ---
 def insert_event(evt_type: str, src: str, dst: str, payload: str) -> int:
     conn = db()
     cur = conn.cursor()
@@ -117,27 +105,29 @@ def insert_event(evt_type: str, src: str, dst: str, payload: str) -> int:
     conn.close()
     return row_id
 
-def create_alert(rule: dict, payload: str, event_id: int):
+def analyze_payload(event_id: int, source_type: str, payload: str):
     conn = db()
-    cur = conn.cursor()
-    ts = dt.datetime.utcnow().isoformat(timespec="seconds")
-    desc = f"Matched '{rule['name']}'"
-    cur.execute(
-        "INSERT INTO alerts(ts, rule_name, severity, description, related_event_id) VALUES(?,?,?,?,?)",
-        (ts, rule['name'], rule['severity'], desc, event_id)
-    )
+    # Fetch all rules for this source type
+    rules = conn.execute("SELECT * FROM rules WHERE source = ?", (source_type,)).fetchall()
+    
+    payload_str = str(payload)
+    
+    for rule in rules:
+        try:
+            # Compile regex on the fly (in production, cache this)
+            if re.search(rule['pattern'], payload_str, re.IGNORECASE):
+                ts = dt.datetime.utcnow().isoformat(timespec="seconds")
+                desc = f"Matched Rule: {rule['name']}"
+                conn.execute(
+                    "INSERT INTO alerts(ts, rule_name, severity, description, related_event_id) VALUES(?,?,?,?,?)",
+                    (ts, rule['name'], rule['severity'], desc, event_id)
+                )
+                print(f"[!] ALERT: {rule['name']} triggered by {payload_str[:20]}...")
+        except re.error:
+            print(f"[!] Invalid Regex in rule: {rule['name']}")
+            
     conn.commit()
     conn.close()
-    print(f"[!] ALERT GENERATED: {rule['name']}")
-
-def analyze_payload(event_id: int, source_type: str, payload: str):
-    # Simple regex matching against the rules
-    payload_str = str(payload)
-    for rule in DETECTION_RULES:
-        if rule['source'] != source_type:
-            continue
-        if rule['pattern'].search(payload_str):
-            create_alert(rule, payload_str, event_id)
 
 # --- Sniffer (Scapy) ---
 def packet_callback(packet):
@@ -145,28 +135,30 @@ def packet_callback(packet):
         try:
             src_ip = packet[IP].src
             dst_ip = packet[IP].dst
-            # Basic filtering to avoid logging our own web traffic repeatedly
+            
+            # Filter noise (localhost communication)
             if src_ip == "127.0.0.1" or dst_ip == "127.0.0.1":
                 return
 
             proto = "TCP" if TCP in packet else "UDP" if UDP in packet else "IP"
             payload_data = packet[Raw].load.decode('utf-8', errors='ignore')
 
-            if len(payload_data) > 4: # Ignore tiny noise
+            # Minimal filtering to avoid logging purely binary junk
+            if len(payload_data) > 4 and any(c.isalnum() for c in payload_data):
                 eid = insert_event("packet", src_ip, f"{dst_ip} ({proto})", payload_data)
                 analyze_payload(eid, "packet", payload_data)
         except Exception:
             pass
 
 def start_sniffer_thread():
-    # Wait a moment for DB to init
     import time
-    time.sleep(2)
+    time.sleep(3) # Let DB init
     print(f"[*] Sniffer thread started on {SNIFF_INTERFACE}")
     try:
-        sniff(iface=SNIFF_INTERFACE, prn=packet_callback, store=0)
+        # filter="ip" ensures we capture traffic
+        sniff(iface=SNIFF_INTERFACE, prn=packet_callback, store=0, filter="ip")
     except Exception as e:
-        print(f"[!] Sniffer Failed: {e}")
+        print(f"[!] Sniffer Failed (Check Interface Name/Permissions): {e}")
 
 # --- Syslog (UDP) ---
 class SyslogProto(asyncio.DatagramProtocol):
@@ -176,31 +168,10 @@ class SyslogProto(asyncio.DatagramProtocol):
         analyze_payload(eid, "syslog", line)
 
 # --- Web Routes ---
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
-
-@app.get("/api/stats")
-def get_stats():
-    """JSON API to feed the Dashboard"""
-    conn = db()
-    cur = conn.cursor()
-    
-    total_events = cur.execute("SELECT COUNT(*) as c FROM events").fetchone()['c']
-    total_alerts = cur.execute("SELECT COUNT(*) as c FROM alerts").fetchone()['c']
-    
-    alerts_by_sev = cur.execute("SELECT severity, COUNT(*) as c FROM alerts GROUP BY severity").fetchall()
-    
-    recent_alerts = cur.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 10").fetchall()
-    recent_logs = cur.execute("SELECT * FROM events ORDER BY id DESC LIMIT 10").fetchall()
-    
-    conn.close()
-    
-    return {
-        "counts": {"events": total_events, "alerts": total_alerts},
-        "charts": {"severity": alerts_by_sev},
-        "feed": {"alerts": recent_alerts, "logs": recent_logs}
-    }
 
 @app.get("/logs", response_class=HTMLResponse)
 def view_logs(request: Request):
@@ -208,6 +179,55 @@ def view_logs(request: Request):
     rows = conn.execute("SELECT * FROM events ORDER BY id DESC LIMIT 200").fetchall()
     conn.close()
     return templates.TemplateResponse("logs.html", {"request": request, "rows": rows})
+
+@app.get("/alerts", response_class=HTMLResponse)
+def view_alerts(request: Request):
+    conn = db()
+    rows = conn.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 200").fetchall()
+    conn.close()
+    return templates.TemplateResponse("alerts.html", {"request": request, "rows": rows})
+
+# -- Rules Management --
+@app.get("/rules", response_class=HTMLResponse)
+def view_rules(request: Request):
+    conn = db()
+    rows = conn.execute("SELECT * FROM rules ORDER BY id").fetchall()
+    conn.close()
+    return templates.TemplateResponse("rules.html", {"request": request, "rows": rows})
+
+@app.post("/rules/add")
+def add_rule(name: str = Form(...), severity: str = Form(...), source: str = Form(...), pattern: str = Form(...)):
+    conn = db()
+    conn.execute(
+        "INSERT INTO rules (rule_id, source, name, severity, pattern) VALUES (?,?,?,?,?)",
+        (name.lower().replace(" ", "_"), source, name, severity, pattern)
+    )
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/rules", status_code=303)
+
+@app.get("/rules/delete/{rule_id}")
+def delete_rule(rule_id: int):
+    conn = db()
+    conn.execute("DELETE FROM rules WHERE id=?", (rule_id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/rules", status_code=303)
+
+# -- Simulation --
+@app.get("/simulate", response_class=HTMLResponse)
+def view_simulate(request: Request):
+    conn = db()
+    rules = conn.execute("SELECT * FROM rules").fetchall()
+    conn.close()
+    return templates.TemplateResponse("simulate.html", {"request": request, "rules": rules})
+
+@app.post("/simulate/attack")
+def simulate_attack(payload: str = Form(...), source: str = Form(...)):
+    # Fake an injection
+    eid = insert_event(source, "SIMULATOR", "127.0.0.1", payload)
+    analyze_payload(eid, source, payload)
+    return RedirectResponse("/alerts", status_code=303)
 
 @app.post("/reset")
 def reset_db():
@@ -218,13 +238,28 @@ def reset_db():
     conn.close()
     return RedirectResponse("/", status_code=303)
 
-# --- Startup ---
+@app.get("/api/stats")
+def get_stats():
+    conn = db()
+    cur = conn.cursor()
+    stats = {
+        "counts": {
+            "events": cur.execute("SELECT COUNT(*) c FROM events").fetchone()['c'],
+            "alerts": cur.execute("SELECT COUNT(*) c FROM alerts").fetchone()['c']
+        },
+        "charts": {"severity": cur.execute("SELECT severity, COUNT(*) c FROM alerts GROUP BY severity").fetchall()},
+        "feed": {
+            "alerts": cur.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 5").fetchall(),
+            "logs": cur.execute("SELECT * FROM events ORDER BY id DESC LIMIT 5").fetchall()
+        }
+    }
+    conn.close()
+    return stats
+
 @app.on_event("startup")
 async def startup_event():
     init_db()
-    # Start Sniffer in background
     t = threading.Thread(target=start_sniffer_thread, daemon=True)
     t.start()
-    # Start UDP Listener
     loop = asyncio.get_running_loop()
     await loop.create_datagram_endpoint(lambda: SyslogProto(), local_addr=("0.0.0.0", UDP_PORT))
