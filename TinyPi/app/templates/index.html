@@ -1,248 +1,148 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TinyPi SIEM</title>
+  <title>SIEM Dashboard</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    :root { --pico-border-radius: 12px; }
-    .stat { display:flex; gap:8px; align-items:baseline; }
-    .grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap:16px; }
-    canvas { background: var(--pico-muted-border-color); border-radius: 8px; padding: 8px; }
-    footer { margin-top: 2rem; opacity: .7; }
-    .live { list-style:none; padding-left:0; display:flex; flex-direction:column; gap:.75rem; }
-    .live li { background: var(--pico-muted-border-color); border-radius: 10px; padding:.75rem; display:grid; gap:.35rem; }
-    .badge { display:inline-flex; align-items:center; justify-content:center; min-width:2.2rem; border-radius:999px; font-size:.75rem; padding:.2rem .6rem; background: var(--pico-secondary-background); color: var(--pico-primary); text-transform:uppercase; letter-spacing:.04em; }
-    .badge.severity-high { background: #f03e3e; color: white; }
-    .badge.severity-medium { background: #ffa94d; color: #3b2000; }
-    .badge.severity-low { background: #4dabf7; color: #041c2c; }
-    .numeric { text-align:right; }
-    table { width:100%; }
-    .rule-name { font-weight:600; }
+    :root { --pico-font-size: 15px; }
+    .badge { padding: 3px 8px; border-radius: 4px; font-size: 0.75em; font-weight: bold; color: #fff; text-transform: uppercase;}
+    .sev-critical { background-color: #d63384; }
+    .sev-high { background-color: #dc3545; }
+    .sev-medium { background-color: #fd7e14; }
+    .sev-low { background-color: #0d6efd; }
+    .type-packet { color: #198754; font-weight: bold; }
+    .type-syslog { color: #0d6efd; font-weight: bold; }
+    .stat-card { text-align: center; padding: 20px; background: #1f2937; border-radius: 8px; margin-bottom: 20px; color: white;}
+    code { font-size: 0.8em; word-wrap: break-word; }
   </style>
 </head>
 <body>
 <main class="container">
-  <h1>TinyPi SIEM <small style="font-size:50%;">prototype</small></h1>
+  <nav>
+    <ul><li><strong>🛡️ Docker SIEM</strong></li></ul>
+    <ul>
+        <li><a href="/logs" role="button" class="secondary outline">Log Explorer</a></li>
+        <li>
+            <form action="/reset" method="POST" style="margin:0;">
+                <button type="submit" class="contrast outline" style="padding: 5px 15px; font-size: 0.8em;">Clear DB</button>
+            </form>
+        </li>
+    </ul>
+  </nav>
+
+  <!-- KPI Cards -->
   <div class="grid">
-    <article>
-      <h3>Overview</h3>
-      <div class="stat"><strong>Total logs:</strong> <span>{{ total_logs }}</span></div>
-      <div class="stat"><strong>Total alerts:</strong> <span>{{ total_alerts }}</span></div>
-      <details>
-        <summary>Top sources (apps)</summary>
-        <ul>
-          {% for r in top_apps %}
-            <li>{{ r['app'] or '(unknown)' }} — {{ r['c'] }}</li>
-          {% endfor %}
-        </ul>
-      </details>
-      <nav>
-        <a role="button" href="/logs">View logs</a>
-        <a role="button" href="/alerts" class="secondary">View alerts</a>
-      </nav>
-    </article>
-    <article>
-      <h3>Logs by hour</h3>
-      <canvas id="byHour"></canvas>
-    </article>
-    <article>
-      <h3>Logs by severity</h3>
-      <canvas id="bySev"></canvas>
-    </article>
-    <article>
-      <h3>Top hosts</h3>
-      <canvas id="byHost"></canvas>
-    </article>
-    <article>
-      <h3>Live activity</h3>
-      <p class="muted">Latest log events</p>
-      <ul class="live" id="latestLogs"></ul>
-      <p class="muted">Recent alerts</p>
-      <ul class="live" id="latestAlerts"></ul>
-    </article>
-    <article>
-      <h3>Detection signatures</h3>
-      <p class="muted">Enabled analytics for spotting suspicious behaviour.</p>
-      <table>
-        <thead>
-          <tr><th>Signature</th><th>Severity</th><th class="numeric">Hits</th><th>Last seen</th></tr>
-        </thead>
-        <tbody id="detectionTable"></tbody>
-      </table>
-    </article>
-    <article>
-      <h3>Settings</h3>
-      <p class="muted">Toggle analytics without restarting the collector.</p>
-      <form id="settingsForm">
-        <fieldset>
-          <legend>Dashboard</legend>
-          <label>
-            <input type="checkbox" role="switch" data-setting="auto_refresh" id="setting-auto-refresh" checked>
-            Auto refresh dashboard data
-          </label>
-        </fieldset>
-        <fieldset>
-          <legend>Detection signatures</legend>
-          <label>
-            <input type="checkbox" role="switch" data-setting="enable_ssh_failed_login" checked>
-            SSH failed login detection
-          </label>
-          <label>
-            <input type="checkbox" role="switch" data-setting="enable_sudo_auth_failure" checked>
-            Sudo authentication failure detection
-          </label>
-          <label>
-            <input type="checkbox" role="switch" data-setting="enable_root_shell" checked>
-            Root shell session detection
-          </label>
-          <label>
-            <input type="checkbox" role="switch" data-setting="enable_kernel_oom" checked>
-            Kernel out-of-memory detection
-          </label>
-        </fieldset>
-      </form>
-    </article>
+    <div class="stat-card">
+        <small>Total Events</small>
+        <h2 id="count-events">0</h2>
+    </div>
+    <div class="stat-card">
+        <small>Total Alerts</small>
+        <h2 id="count-alerts" style="color: #dc3545;">0</h2>
+    </div>
+    <div>
+        <canvas id="sevChart" style="max-height: 120px;"></canvas>
+    </div>
   </div>
-  <footer>Raspberry Pi 5 • FastAPI • SQLite • UDP syslog ingest</footer>
+
+  <hr>
+
+  <div class="grid">
+    <!-- Alerts Column -->
+    <div>
+        <h4>🚨 Recent Alerts</h4>
+        <table class="striped">
+            <thead><tr><th>Time</th><th>Sev</th><th>Rule</th></tr></thead>
+            <tbody id="alert-table">
+                <tr><td colspan="3">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Logs Column -->
+    <div>
+        <h4>📡 Live Traffic</h4>
+        <table class="striped">
+            <thead><tr><th>Type</th><th>Src</th><th>Payload</th></tr></thead>
+            <tbody id="log-table">
+                <tr><td colspan="3">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+  </div>
+
 </main>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <script>
-const charts = {};
-let dashboardSettings = {};
-let refreshTimer;
+    let chartInstance = null;
 
-function ensureChart(id, config) {
-  if (charts[id]) {
-    charts[id].data = config.data;
-    charts[id].options = config.options;
-    charts[id].update();
-    return;
-  }
-  charts[id] = new Chart(document.getElementById(id), config);
-}
+    async function updateDashboard() {
+        try {
+            const response = await fetch('/api/stats');
+            const data = await response.json();
 
-function renderCharts(data) {
-  const hLabels = data.by_hour.map(x => x.hour);
-  const hVals = data.by_hour.map(x => x.c);
-  ensureChart('byHour', {
-    type: 'line',
-    data: { labels: hLabels, datasets: [{ label: 'Logs/hour', data: hVals, tension: 0.2, fill: true }]},
-    options: { responsive: true }
-  });
+            // 1. Update Counts
+            document.getElementById('count-events').innerText = data.counts.events;
+            document.getElementById('count-alerts').innerText = data.counts.alerts;
 
-  const sLabels = data.by_sev.map(x => x.severity ?? 'unknown');
-  const sVals = data.by_sev.map(x => x.c);
-  ensureChart('bySev', {
-    type: 'bar',
-    data: { labels: sLabels, datasets: [{ label: 'By severity', data: sVals, backgroundColor: '#2c7be5' }]},
-    options: { responsive: true }
-  });
+            // 2. Update Alerts Table
+            const alertRows = data.feed.alerts.map(a => 
+                `<tr>
+                    <td><small>${a.ts.split('T')[1].split('.')[0]}</small></td>
+                    <td><span class="badge sev-${a.severity}">${a.severity}</span></td>
+                    <td><small>${a.rule_name}</small></td>
+                </tr>`
+            ).join('');
+            document.getElementById('alert-table').innerHTML = alertRows || '<tr><td colspan="3">No alerts yet</td></tr>';
 
-  const hostLabels = data.by_host.map(x => x.host ?? 'unknown');
-  const hostVals = data.by_host.map(x => x.c);
-  ensureChart('byHost', {
-    type: 'bar',
-    data: { labels: hostLabels, datasets: [{ label: 'Top hosts', data: hostVals, backgroundColor: '#82c91e' }]},
-    options: { responsive: true, plugins: { legend: { display: false } } }
-  });
-}
+            // 3. Update Logs Table
+            const logRows = data.feed.logs.map(l => 
+                `<tr>
+                    <td><small class="type-${l.type}">${l.type.toUpperCase().charAt(0)}</small></td>
+                    <td><small>${l.src}</small></td>
+                    <td><code>${l.payload.substring(0, 30)}...</code></td>
+                </tr>`
+            ).join('');
+            document.getElementById('log-table').innerHTML = logRows || '<tr><td colspan="3">No traffic yet</td></tr>';
 
-function renderLive(data) {
-  const latestLogs = document.getElementById('latestLogs');
-  latestLogs.innerHTML = data.latest_logs.map(row => `
-    <li>
-      <span class="badge">${row.severity ?? '-'}</span>
-      <strong>${row.host ?? 'unknown'}</strong>
-      <small>${row.ts ?? ''}</small>
-      <div>${row.msg ?? ''}</div>
-    </li>`).join('') || '<li>No log data yet.</li>';
+            // 4. Update Chart
+            const sevLabels = data.charts.severity.map(x => x.severity);
+            const sevCounts = data.charts.severity.map(x => x.c);
+            const ctx = document.getElementById('sevChart');
 
-  const latestAlerts = document.getElementById('latestAlerts');
-  latestAlerts.innerHTML = data.latest_alerts.map(row => `
-    <li>
-      <span class="badge severity-${row.severity}">${row.severity}</span>
-      <strong>${row.type}</strong>
-      <small>${row.ts}</small>
-      <div>${row.description}</div>
-    </li>`).join('') || '<li>No alerts have been raised.</li>';
-}
+            if (chartInstance) {
+                chartInstance.data.labels = sevLabels;
+                chartInstance.data.datasets[0].data = sevCounts;
+                chartInstance.update();
+            } else {
+                chartInstance = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: sevLabels,
+                        datasets: [{
+                            data: sevCounts,
+                            backgroundColor: ['#d63384', '#dc3545', '#fd7e14', '#0d6efd'],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: { 
+                        responsive: true, 
+                        plugins: { legend: { display: false } } 
+                    }
+                });
+            }
 
-function renderDetections(data) {
-  const tbody = document.getElementById('detectionTable');
-  tbody.innerHTML = data.detections.map(row => `
-    <tr>
-      <td>
-        <div class="rule-name">${row.name}</div>
-        <small class="muted">${row.description}${row.enabled ? '' : ' (disabled)'}</small>
-      </td>
-      <td><span class="badge severity-${row.severity}">${row.severity}</span></td>
-      <td class="numeric">${row.triggered_count}</td>
-      <td>${row.last_seen ? row.last_seen : '—'}</td>
-    </tr>`).join('');
-}
-
-async function refreshDashboard() {
-  const res = await fetch('/api/stats');
-  const data = await res.json();
-  renderCharts(data);
-  renderLive(data);
-  renderDetections(data);
-}
-
-function applySettings(settings) {
-  dashboardSettings = settings;
-  document.querySelectorAll('[data-setting]').forEach(el => {
-    const key = el.dataset.setting;
-    const value = settings[key];
-    if (typeof value !== 'undefined') {
-      el.checked = value !== 'false';
+        } catch (e) {
+            console.error("Error fetching stats:", e);
+        }
     }
-  });
-  scheduleRefresh();
-}
 
-function scheduleRefresh() {
-  if (refreshTimer) {
-    clearInterval(refreshTimer);
-    refreshTimer = null;
-  }
-  if (dashboardSettings.auto_refresh !== 'false') {
-    refreshTimer = setInterval(refreshDashboard, 10000);
-  }
-}
-
-async function updateSetting(key, value) {
-  await fetch('/api/settings', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key, value }),
-  });
-  const latest = await fetch('/api/settings');
-  applySettings(await latest.json());
-}
-
-document.getElementById('settingsForm').addEventListener('change', async (event) => {
-  const target = event.target;
-  if (!target.dataset.setting) {
-    return;
-  }
-  const key = target.dataset.setting;
-  const value = target.checked ? 'true' : 'false';
-  await updateSetting(key, value);
-  if (key.startsWith('enable_')) {
-    await refreshDashboard();
-  }
-});
-
-async function init() {
-  const settings = await fetch('/api/settings').then(r => r.json());
-  applySettings(settings);
-  await refreshDashboard();
-}
-
-init();
+    // Refresh every 2 seconds
+    setInterval(updateDashboard, 2000);
+    updateDashboard();
 </script>
 </body>
 </html>

@@ -1,18 +1,21 @@
 version: "3.9"
 
 services:
-  siemapp:
-    build: ./app
+  siem:
+    build: .
+    container_name: tinypi-siem
     ports:
-      - "8000:8000"
-      - "5514:5514/udp"
+      - "8000:8000"      # Dashboard
+      - "5514:5514/udp"  # Syslog 
+    cap_add:
+      - NET_ADMIN        
+    restart: unless-stopped
     environment:
-      - SIEM_DB=/data/siem.db
-      - SIEM_UDP_PORT=5514
-      - SIEM_HTTP_INGEST_TOKEN=changeme-token
+      - SIEM_DB=/data/events.db
+      - SIEM_INTERFACE=eth0  
+      - PYTHONUNBUFFERED=1   
     volumes:
-      - siemdata:/data
+      - siem_data:/data
 
 volumes:
-  siemdata:
-
+  siem_data:

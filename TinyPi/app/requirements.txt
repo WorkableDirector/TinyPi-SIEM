@@ -1,4 +1,5 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
-Jinja2==3.1.4
-pydantic==2.9.2
+jinja2==3.1.4
+scapy==2.5.0
+netifaces==0.11.0

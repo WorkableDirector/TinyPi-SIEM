@@ -3,376 +3,228 @@ import datetime as dt
 import os
 import re
 import sqlite3
-from typing import Optional, Dict, Any, Iterable
+import threading
+import logging
+from typing import List, Dict, Any
 
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from scapy.all import sniff, IP, TCP, UDP, Raw
 
-DB_PATH = os.environ.get("SIEM_DB", "siem.db")
-UDP_PORT = int(os.environ.get("SIEM_UDP_PORT", "5514"))
-HTTP_INGEST_TOKEN = os.environ.get("SIEM_HTTP_INGEST_TOKEN", "changeme-token")
+# --- Configuration ---
+DB_PATH = os.environ.get("SIEM_DB", "/data/siem.db")
+UDP_PORT = 5514
+SNIFF_INTERFACE = os.environ.get("SIEM_INTERFACE", "eth0")
 
-DEFAULT_SETTINGS = {
-    "auto_refresh": "true",
-    "enable_ssh_failed_login": "true",
-    "enable_sudo_auth_failure": "true",
-    "enable_root_shell": "true",
-    "enable_kernel_oom": "true",
-}
-
+# --- Signatures (Rules) ---
 DETECTION_RULES = [
     {
-        "id": "ssh_failed_login",
-        "name": "SSH failed login", 
+        "id": "ssh_brute",
+        "source": "syslog",
+        "name": "SSH Brute Force", 
         "severity": "medium",
-        "description": "Detects repeated failed SSH logins that could indicate brute-force activity.",
-        "app": "sshd",
         "pattern": re.compile(r"(Failed password|Invalid user|error: PAM: Authentication failure)", re.IGNORECASE),
     },
     {
-        "id": "sudo_auth_failure",
-        "name": "Sudo authentication failure",
+        "id": "sudo_abuse",
+        "source": "syslog",
+        "name": "Sudo Auth Failure",
         "severity": "medium",
-        "description": "Flags sudo authentication failures which may highlight privilege escalation attempts.",
-        "app": "sudo",
         "pattern": re.compile(r"authentication failure", re.IGNORECASE),
     },
     {
-        "id": "root_shell",
-        "name": "Root shell opened",
-        "severity": "high",
-        "description": "Highlights when a shell session is opened for the root account.",
-        "app": None,
-        "pattern": re.compile(r"session opened for user root", re.IGNORECASE),
+        "id": "sql_injection",
+        "source": "packet",
+        "name": "SQL Injection Attempt",
+        "severity": "critical",
+        "pattern": re.compile(r"(UNION SELECT|OR 1=1|DROP TABLE|Waitfor delay)", re.IGNORECASE),
     },
     {
-        "id": "kernel_oom",
-        "name": "Kernel out-of-memory",
+        "id": "xss_attempt",
+        "source": "packet",
+        "name": "XSS Script Injection",
+        "severity": "medium",
+        "pattern": re.compile(r"(<script>|javascript:alert)", re.IGNORECASE),
+    },
+    {
+        "id": "passwd_file",
+        "source": "packet",
+        "name": "Sensitive File Access",
         "severity": "high",
-        "description": "Raises awareness about kernel out-of-memory conditions which can destabilize systems.",
-        "app": None,
-        "pattern": re.compile(r"Out of memory: Kill process", re.IGNORECASE),
+        "pattern": re.compile(r"(/etc/passwd|/win.ini)", re.IGNORECASE),
     },
 ]
 
-app = FastAPI(title="TinyPi SIEM", version="0.1.0")
+app = FastAPI(title="TinyPi SIEM", version="2.1")
+# Mount static files (ensure folder exists even if empty)
+os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+# --- Database Helpers ---
+def dict_factory(cursor, row):
+    """Converts SQLite rows to Python Dictionaries"""
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col[0]] = row[idx]
+    return d
+
 def db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+    conn.row_factory = dict_factory  # This fixes the JSON serialization errors
     return conn
 
 def init_db():
     conn = db()
     cur = conn.cursor()
-    cur.executescript(
-        """
+    cur.executescript("""
         PRAGMA journal_mode=WAL;
-        CREATE TABLE IF NOT EXISTS logs(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts TEXT NOT NULL,
-            host TEXT,
-            facility TEXT,
-            severity TEXT,
-            app TEXT,
-            msg TEXT,
-            raw TEXT
-        );
-        CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs(ts);
-        CREATE INDEX IF NOT EXISTS idx_logs_host ON logs(host);
-        CREATE INDEX IF NOT EXISTS idx_logs_app ON logs(app);
-
-        CREATE TABLE IF NOT EXISTS alerts(
+        CREATE TABLE IF NOT EXISTS events(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts TEXT NOT NULL,
             type TEXT NOT NULL,
+            src TEXT,
+            dst TEXT,
+            payload TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_events_id ON events(id);
+        
+        CREATE TABLE IF NOT EXISTS alerts(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL,
+            rule_name TEXT NOT NULL,
             severity TEXT NOT NULL,
             description TEXT NOT NULL,
-            related_log_id INTEGER,
-            FOREIGN KEY(related_log_id) REFERENCES logs(id)
+            related_event_id INTEGER
         );
-        CREATE INDEX IF NOT EXISTS idx_alerts_ts ON alerts(ts);
-
-        CREATE TABLE IF NOT EXISTS settings(
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-        """
-    )
-    cur.executemany(
-        "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO NOTHING",
-        list(DEFAULT_SETTINGS.items()),
-    )
+    """)
     conn.commit()
     conn.close()
 
-def insert_log(parsed: Dict[str, Any]) -> int:
+# --- Data Ingestion ---
+def insert_event(evt_type: str, src: str, dst: str, payload: str) -> int:
     conn = db()
     cur = conn.cursor()
+    ts = dt.datetime.utcnow().isoformat(timespec="seconds")
     cur.execute(
-        """INSERT INTO logs(ts, host, facility, severity, app, msg, raw)
-           VALUES(?,?,?,?,?,?,?)""",
-        (
-            parsed.get("ts", dt.datetime.utcnow().isoformat(timespec="seconds")),
-            parsed.get("host"),
-            parsed.get("facility"),
-            parsed.get("severity"),
-            parsed.get("app"),
-            parsed.get("msg"),
-            parsed.get("raw"),
-        ),
+        "INSERT INTO events(ts, type, src, dst, payload) VALUES(?,?,?,?,?)",
+        (ts, evt_type, src, dst, payload)
     )
-    log_id = cur.lastrowid
+    row_id = cur.lastrowid
     conn.commit()
     conn.close()
-    return log_id
+    return row_id
 
-def insert_alert(alert_type: str, severity: str, description: str, related_log_id: Optional[int] = None):
+def create_alert(rule: dict, payload: str, event_id: int):
     conn = db()
     cur = conn.cursor()
+    ts = dt.datetime.utcnow().isoformat(timespec="seconds")
+    desc = f"Matched '{rule['name']}'"
     cur.execute(
-        """INSERT INTO alerts(ts, type, severity, description, related_log_id)
-           VALUES(?,?,?,?,?)""",
-        (
-            dt.datetime.utcnow().isoformat(timespec="seconds"),
-            alert_type,
-            severity,
-            description,
-            related_log_id,
-        ),
+        "INSERT INTO alerts(ts, rule_name, severity, description, related_event_id) VALUES(?,?,?,?,?)",
+        (ts, rule['name'], rule['severity'], desc, event_id)
     )
     conn.commit()
     conn.close()
+    print(f"[!] ALERT GENERATED: {rule['name']}")
 
-# Naive RFC3164-ish parser
-import datetime as dtmod
-PRI_RE = re.compile(r"^<(\d{1,3})>")
-TS1_RE = re.compile(r"^\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}")
-APP_RE = re.compile(r"([a-zA-Z0-9_\-\//\.]+)(?:\[(\d+)\])?:")
+def analyze_payload(event_id: int, source_type: str, payload: str):
+    # Simple regex matching against the rules
+    payload_str = str(payload)
+    for rule in DETECTION_RULES:
+        if rule['source'] != source_type:
+            continue
+        if rule['pattern'].search(payload_str):
+            create_alert(rule, payload_str, event_id)
 
-def parse_syslog(line: str) -> Dict[str, Any]:
-    out: Dict[str, Any] = {"raw": line.strip()}
+# --- Sniffer (Scapy) ---
+def packet_callback(packet):
+    if IP in packet and Raw in packet:
+        try:
+            src_ip = packet[IP].src
+            dst_ip = packet[IP].dst
+            # Basic filtering to avoid logging our own web traffic repeatedly
+            if src_ip == "127.0.0.1" or dst_ip == "127.0.0.1":
+                return
+
+            proto = "TCP" if TCP in packet else "UDP" if UDP in packet else "IP"
+            payload_data = packet[Raw].load.decode('utf-8', errors='ignore')
+
+            if len(payload_data) > 4: # Ignore tiny noise
+                eid = insert_event("packet", src_ip, f"{dst_ip} ({proto})", payload_data)
+                analyze_payload(eid, "packet", payload_data)
+        except Exception:
+            pass
+
+def start_sniffer_thread():
+    # Wait a moment for DB to init
+    import time
+    time.sleep(2)
+    print(f"[*] Sniffer thread started on {SNIFF_INTERFACE}")
     try:
-        pri_match = PRI_RE.match(line)
-        if pri_match:
-            pri = int(pri_match.group(1))
-            facility = pri >> 3
-            severity = pri & 7
-            out["facility"] = str(facility)
-            out["severity"] = str(severity)
-            line = line[pri_match.end():]
+        sniff(iface=SNIFF_INTERFACE, prn=packet_callback, store=0)
+    except Exception as e:
+        print(f"[!] Sniffer Failed: {e}")
 
-        ts_match = TS1_RE.match(line)
-        if ts_match:
-            year = dtmod.datetime.utcnow().year
-            ts = dtmod.datetime.strptime(f"{year} {ts_match.group(0)}", "%Y %b %d %H:%M:%S")
-            out["ts"] = ts.isoformat(timespec="seconds")
-            line = line[ts_match.end():].lstrip()
+# --- Syslog (UDP) ---
+class SyslogProto(asyncio.DatagramProtocol):
+    def datagram_received(self, data: bytes, addr):
+        line = data.decode(errors="ignore").strip()
+        eid = insert_event("syslog", addr[0], "syslog", line)
+        analyze_payload(eid, "syslog", line)
 
-        parts = line.split(maxsplit=1)
-        if parts:
-            out["host"] = parts[0]
-            line = parts[1] if len(parts) > 1 else ""
-
-        app_match = APP_RE.match(line)
-        if app_match:
-            out["app"] = app_match.group(1)
-            line = line[app_match.end():].lstrip()
-
-        out["msg"] = line.strip()
-    except Exception:
-        pass
-    return out
-
-def get_settings() -> Dict[str, str]:
-    conn = db()
-    cur = conn.cursor()
-    cur.execute("SELECT key, value FROM settings")
-    rows = cur.fetchall()
-    conn.close()
-    settings = {row["key"]: row["value"] for row in rows}
-    merged = dict(DEFAULT_SETTINGS)
-    merged.update(settings)
-    return merged
-
-def set_setting(key: str, value: str):
-    conn = db()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        (key, value),
-    )
-    conn.commit()
-    conn.close()
-
-def detection_settings_key(rule_id: str) -> str:
-    return f"enable_{rule_id}"
-
-def detection_rules() -> Iterable[Dict[str, Any]]:
-    return DETECTION_RULES
-
-def analyze_and_alert(log_id: int, parsed: Dict[str, Any]):
-    msg = (parsed.get("msg") or "")
-    appname = (parsed.get("app") or "").lower()
-    settings = get_settings()
-    for rule in detection_rules():
-        enabled_key = detection_settings_key(rule["id"])
-        if settings.get(enabled_key, "true").lower() == "false":
-            continue
-        expected_app = rule.get("app")
-        if expected_app and expected_app.lower() != appname:
-            continue
-        pattern = rule.get("pattern")
-        if pattern and not pattern.search(msg):
-            continue
-        desc = f"{rule['description']} Snippet: {msg[:160]}"
-        insert_alert(rule["id"], rule["severity"], desc, related_log_id=log_id)
-
-class IngestItem(BaseModel):
-    token: str
-    host: Optional[str] = None
-    app: Optional[str] = None
-    msg: str
-
-@app.post("/api/ingest")
-def http_ingest(item: IngestItem):
-    if item.token != HTTP_INGEST_TOKEN:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    parsed = {
-        "ts": dt.datetime.utcnow().isoformat(timespec="seconds"),
-        "host": item.host or "http-client",
-        "app": item.app or "http",
-        "msg": item.msg,
-        "raw": item.msg,
-    }
-    log_id = insert_log(parsed)
-    analyze_and_alert(log_id, parsed)
-    return {"status": "ok", "log_id": log_id}
-
+# --- Web Routes ---
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
+@app.get("/api/stats")
+def get_stats():
+    """JSON API to feed the Dashboard"""
     conn = db()
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) as c FROM logs")
-    total_logs = cur.fetchone()["c"]
-    cur.execute("SELECT COUNT(*) as c FROM alerts")
-    total_alerts = cur.fetchone()["c"]
-    cur.execute("SELECT app, COUNT(*) as c FROM logs GROUP BY app ORDER BY c DESC LIMIT 5")
-    top_apps = cur.fetchall()
+    
+    total_events = cur.execute("SELECT COUNT(*) as c FROM events").fetchone()['c']
+    total_alerts = cur.execute("SELECT COUNT(*) as c FROM alerts").fetchone()['c']
+    
+    alerts_by_sev = cur.execute("SELECT severity, COUNT(*) as c FROM alerts GROUP BY severity").fetchall()
+    
+    recent_alerts = cur.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 10").fetchall()
+    recent_logs = cur.execute("SELECT * FROM events ORDER BY id DESC LIMIT 10").fetchall()
+    
     conn.close()
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "total_logs": total_logs,
-        "total_alerts": total_alerts,
-        "top_apps": top_apps,
-    })
+    
+    return {
+        "counts": {"events": total_events, "alerts": total_alerts},
+        "charts": {"severity": alerts_by_sev},
+        "feed": {"alerts": recent_alerts, "logs": recent_logs}
+    }
 
 @app.get("/logs", response_class=HTMLResponse)
-def logs_page(request: Request, limit: int = 200):
+def view_logs(request: Request):
     conn = db()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM logs ORDER BY id DESC LIMIT ?", (limit,))
-    rows = cur.fetchall()
+    rows = conn.execute("SELECT * FROM events ORDER BY id DESC LIMIT 200").fetchall()
     conn.close()
     return templates.TemplateResponse("logs.html", {"request": request, "rows": rows})
 
-
-@app.post("/logs/clear")
-def clear_logs():
+@app.post("/reset")
+def reset_db():
     conn = db()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM alerts")
-    cur.execute("DELETE FROM logs")
+    conn.execute("DELETE FROM events")
+    conn.execute("DELETE FROM alerts")
     conn.commit()
     conn.close()
-    return RedirectResponse(url="/logs", status_code=303)
+    return RedirectResponse("/", status_code=303)
 
-@app.get("/alerts", response_class=HTMLResponse)
-def alerts_page(request: Request, limit: int = 200):
-    conn = db()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT ?", (limit,))
-    rows = cur.fetchall()
-    conn.close()
-    return templates.TemplateResponse("alerts.html", {"request": request, "rows": rows})
-
-@app.get("/api/stats")
-def api_stats():
-    conn = db()
-    cur = conn.cursor()
-    cur.execute("SELECT substr(ts,1,13) as hour, COUNT(*) c FROM logs GROUP BY substr(ts,1,13) ORDER BY hour")
-    by_hour = [dict(r) for r in cur.fetchall()]
-    cur.execute("SELECT severity, COUNT(*) c FROM logs GROUP BY severity")
-    by_sev = [dict(r) for r in cur.fetchall()]
-    cur.execute("SELECT host, COUNT(*) c FROM logs GROUP BY host ORDER BY c DESC LIMIT 10")
-    by_host = [dict(r) for r in cur.fetchall()]
-    cur.execute("SELECT * FROM logs ORDER BY id DESC LIMIT 5")
-    latest_logs = [dict(r) for r in cur.fetchall()]
-    cur.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 5")
-    latest_alerts = [dict(r) for r in cur.fetchall()]
-    cur.execute("SELECT type, COUNT(*) c, MAX(ts) last_ts FROM alerts GROUP BY type")
-    detection_counts = {row["type"]: {"count": row["c"], "last_ts": row["last_ts"]} for row in cur.fetchall()}
-    conn.close()
-    settings = get_settings()
-    detections = []
-    for rule in detection_rules():
-        key = detection_settings_key(rule["id"])
-        stats = detection_counts.get(rule["id"], {})
-        detections.append(
-            {
-                "id": rule["id"],
-                "name": rule["name"],
-                "severity": rule["severity"],
-                "description": rule["description"],
-                "enabled": settings.get(key, "true").lower() != "false",
-                "triggered_count": stats.get("count", 0),
-                "last_seen": stats.get("last_ts"),
-            }
-        )
-    return {
-        "by_hour": by_hour,
-        "by_sev": by_sev,
-        "by_host": by_host,
-        "latest_logs": latest_logs,
-        "latest_alerts": latest_alerts,
-        "detections": detections,
-    }
-
-@app.get("/api/settings")
-def api_get_settings():
-    return get_settings()
-
-class SettingUpdate(BaseModel):
-    key: str
-    value: str
-
-@app.post("/api/settings")
-def api_update_setting(update: SettingUpdate):
-    if update.key not in DEFAULT_SETTINGS and not update.key.startswith("enable_"):
-        raise HTTPException(status_code=400, detail="Unknown setting")
-    normalized = update.value
-    if normalized.lower() in {"true", "false"}:
-        normalized = normalized.lower()
-    set_setting(update.key, normalized)
-    return {"status": "ok", "settings": get_settings()}
-
-class SyslogProto(asyncio.DatagramProtocol):
-    def datagram_received(self, data: bytes, addr):
-        line = data.decode(errors="ignore")
-        parsed = parse_syslog(line)
-        log_id = insert_log(parsed)
-        analyze_and_alert(log_id, parsed)
-
-async def start_udp(loop):
-    await loop.create_datagram_endpoint(SyslogProto, local_addr=("0.0.0.0", UDP_PORT))
-
+# --- Startup ---
 @app.on_event("startup")
-async def on_startup():
+async def startup_event():
     init_db()
-    loop = asyncio.get_event_loop()
-    await start_udp(loop)
+    # Start Sniffer in background
+    t = threading.Thread(target=start_sniffer_thread, daemon=True)
+    t.start()
+    # Start UDP Listener
+    loop = asyncio.get_running_loop()
+    await loop.create_datagram_endpoint(lambda: SyslogProto(), local_addr=("0.0.0.0", UDP_PORT))

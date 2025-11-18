@@ -1,33 +1,38 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Logs • TinyPi SIEM</title>
+  <title>Log Explorer</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-  <style>code{white-space:pre-wrap}</style>
+  <style>
+      body { padding: 20px; }
+      code { font-size: 0.8em; word-break: break-all; }
+      .type-packet { color: #198754; }
+      .type-syslog { color: #0d6efd; }
+  </style>
 </head>
 <body>
 <main class="container">
-  <h2>Recent Logs</h2>
-  <a href="/">← Back</a>
-  <form method="post" action="/logs/clear" style="margin-top:1rem">
-    <button type="submit" class="contrast">Clear All Logs</button>
-  </form>
-  <table>
-    <thead><tr><th>ID</th><th>Time (UTC)</th><th>Host</th><th>App</th><th>Message</th></tr></thead>
-    <tbody>
-      {% for r in rows %}
-        <tr>
-          <td>{{ r['id'] }}</td>
-          <td>{{ r['ts'] }}</td>
-          <td>{{ r['host'] }}</td>
-          <td>{{ r['app'] }}</td>
-          <td><code>{{ r['msg'] }}</code></td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2>Full Event Log</h2>
+        <a href="/" role="button" class="outline">Back to Dashboard</a>
+    </div>
+    <hr>
+    <div style="overflow-x: auto;">
+        <table>
+            <thead><tr><th>Time</th><th>Type</th><th>Source</th><th>Dest</th><th>Payload</th></tr></thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td><small>{{ row.ts }}</small></td>
+                    <td class="type-{{ row.type }}"><strong>{{ row.type }}</strong></td>
+                    <td>{{ row.src }}</td>
+                    <td>{{ row.dst }}</td>
+                    <td><code>{{ row.payload }}</code></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </main>
 </body>
 </html>
