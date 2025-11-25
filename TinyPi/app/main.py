@@ -170,10 +170,24 @@ def start_sniffer_thread():
 
 # Syslog (UDP)
 class SyslogProto(asyncio.DatagramProtocol):
+    def __init__(self):
+        self.last_seen: dict[tuple[str, str], float] = {}
+        self.dedupe_window = 5.0  # seconds
+
     def datagram_received(self, data: bytes, addr):
         try:
             line = data.decode(errors="ignore").strip()
             if len(line) > 0 and is_meaningful_payload(line):  # Only process non-empty, readable lines
+                now = asyncio.get_event_loop().time()
+                sig = (addr[0], line)
+
+                # Drop bursts of identical lines from the same source within the window
+                last_ts = self.last_seen.get(sig)
+                if last_ts and (now - last_ts) < self.dedupe_window:
+                    return
+
+                self.last_seen[sig] = now
+
                 eid, ts = insert_event("syslog", addr[0], "syslog", line)
                 analyze_payload(eid, ts, "syslog", line)
         except Exception as e:
@@ -197,6 +211,35 @@ def view_alerts(request: Request):
     rows = conn.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 200").fetchall()
     conn.close()
     return templates.TemplateResponse("alerts.html", {"request": request, "rows": rows})
+
+
+# -- Data management --
+@app.post("/reset/events")
+def clear_events():
+    conn = db()
+    conn.execute("DELETE FROM events")
+    conn.commit()
+    conn.close()
+    return JSONResponse({"status": "ok", "cleared": "events"})
+
+
+@app.post("/reset/alerts")
+def clear_alerts():
+    conn = db()
+    conn.execute("DELETE FROM alerts")
+    conn.commit()
+    conn.close()
+    return JSONResponse({"status": "ok", "cleared": "alerts"})
+
+
+@app.post("/reset/all")
+def clear_all():
+    conn = db()
+    conn.execute("DELETE FROM alerts")
+    conn.execute("DELETE FROM events")
+    conn.commit()
+    conn.close()
+    return JSONResponse({"status": "ok", "cleared": "all"})
 
 # -- Rules Management --
 @app.get("/rules", response_class=HTMLResponse)

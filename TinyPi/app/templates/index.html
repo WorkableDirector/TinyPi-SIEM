@@ -118,7 +118,7 @@
 <body>
 <main class="container">
   <nav>
-    <ul><li><strong>🛡️ TinyPi SIEM</strong></li></ul>
+    <ul><li><strong>TinyPi SIEM</strong></li></ul>
     <ul>
       <li><a href="/" class="contrast">Dashboard</a></li>
       <li><a href="/logs">Logs</a></li>
@@ -144,11 +144,18 @@
 
   <hr>
 
+  <div class="section-header" style="justify-content: flex-end; margin-bottom: 18px;">
+    <div style="display:flex; gap:10px; align-items:center;">
+      <small style="color:#94a3b8;">Maintenance</small>
+      <button id="clear-all" class="outline secondary" style="margin:0;">Clear All Data</button>
+    </div>
+  </div>
+
   <div class="grid">
     <!-- Alerts Column -->
     <div class="panel">
         <div class="section-header">
-          <h4>🚨 Recent Alerts</h4>
+          <h4>Recent Alerts</h4>
           <small style="color:#94a3b8">Updated live</small>
         </div>
         <table class="striped">
@@ -162,7 +169,7 @@
     <!-- Logs Column -->
     <div class="panel">
         <div class="section-header">
-          <h4>📡 Live Traffic</h4>
+          <h4>Live Traffic</h4>
           <small style="color:#94a3b8">Showing newest first</small>
         </div>
         <table class="striped">
@@ -250,6 +257,16 @@
     // Refresh every 2 seconds
     setInterval(updateDashboard, 2000);
     updateDashboard();
+
+    document.getElementById('clear-all').addEventListener('click', async () => {
+        if (!confirm('Clear all stored events and alerts?')) return;
+        try {
+            await fetch('/reset/all', { method: 'POST' });
+            updateDashboard();
+        } catch (e) {
+            console.error('Error clearing data:', e);
+        }
+    });
 </script>
 </body>
 </html>

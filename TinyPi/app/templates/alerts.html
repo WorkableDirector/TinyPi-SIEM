@@ -57,7 +57,7 @@
   document.getElementById('clear-alerts').addEventListener('click', async function() {
     if (confirm('Are you sure you want to clear all alerts?')) {
       try {
-        await fetch('/reset', { method: 'POST' });
+        await fetch('/reset/alerts', { method: 'POST' });
         window.location.href = '/alerts';
       } catch (e) {
         console.error("Error clearing alerts:", e);
