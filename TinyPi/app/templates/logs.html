@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Log Explorer</title>
+  <title>Syslog Explorer</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <style>
       :root {
@@ -35,27 +35,25 @@
 <main class="container">
     <div style="display:flex; justify-content:space-between; align-items:center;">
         <div>
-          <p style="margin:0; color:#94a3b8; font-size:0.9em;">Investigate collected events</p>
-          <h2 style="margin:4px 0 0 0;">Full Event Log</h2>
+          <p style="margin:0; color:#94a3b8; font-size:0.9em;">Investigate UniFi Gateway syslog messages</p>
+          <h2 style="margin:4px 0 0 0;">Syslog Log</h2>
         </div>
         <a href="/" role="button" class="outline">Back to Dashboard</a>
     </div>
 
     <div class="action-buttons">
-      <button id="clear-logs" class="outline secondary refresh-btn">Clear All Logs</button>
+      <button id="clear-logs" class="outline secondary refresh-btn">Clear All Syslog</button>
       <button id="refresh-logs" class="outline refresh-btn">Refresh</button>
     </div>
 
     <div style="overflow-x: auto;">
         <table>
-            <thead><tr><th>Time (UTC)</th><th>Type</th><th>Source</th><th>Dest</th><th>Payload</th></tr></thead>
+            <thead><tr><th>Time (UTC)</th><th>Source</th><th>Payload</th></tr></thead>
             <tbody>
                 {% for row in rows %}
                 <tr>
                     <td><small>{{ row.ts }}</small></td>
-                    <td><span class="pill type-{{ row.type }}">{{ row.type|upper }}</span></td>
                     <td>{{ row.src }}</td>
-                    <td>{{ row.dst }}</td>
                     <td><code>{{ row.payload }}</code></td>
                 </tr>
                 {% endfor %}
