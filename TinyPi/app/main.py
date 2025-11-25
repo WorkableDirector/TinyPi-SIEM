@@ -13,13 +13,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from scapy.all import sniff, IP, TCP, UDP, Raw
 
-# --- Configuration ---
 DB_PATH = os.environ.get("SIEM_DB", "/data/siem.db")
 UDP_PORT = 514
 SNIFF_INTERFACE = os.environ.get("SIEM_INTERFACE", "eth0")
 WEB_PORT = int(os.environ.get("SIEM_PORT", 8000))
 
-# --- Default Rules (Seeded on first run) ---
 DEFAULT_RULES = [
     ("ssh_brute", "syslog", "SSH Brute Force", "medium", "(Failed password|Invalid user|error: PAM: Authentication failure)"),
     ("sudo_abuse", "syslog", "Sudo Auth Failure", "medium", "authentication failure"),
@@ -33,7 +31,6 @@ os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# --- Database Helpers ---
 def dict_factory(cursor, row):
     d = {}
     for idx, col in enumerate(cursor.description):
@@ -79,7 +76,6 @@ def init_db():
         );
     """)
     
-    # Seed rules if empty
     cur.execute("SELECT COUNT(*) as c FROM rules")
     if cur.fetchone()['c'] == 0:
         print("[*] Seeding default detection rules...")
@@ -91,7 +87,6 @@ def init_db():
     conn.commit()
     conn.close()
 
-# --- Core Logic ---
 def insert_event(evt_type: str, src: str, dst: str, payload: str) -> int:
     conn = db()
     cur = conn.cursor()
@@ -107,7 +102,6 @@ def insert_event(evt_type: str, src: str, dst: str, payload: str) -> int:
 
 def analyze_payload(event_id: int, source_type: str, payload: str):
     conn = db()
-    # Fetch all rules for this source type
     rules = conn.execute("SELECT * FROM rules WHERE source = ?", (source_type,)).fetchall()
     
     payload_str = str(payload)
@@ -129,7 +123,6 @@ def analyze_payload(event_id: int, source_type: str, payload: str):
     conn.commit()
     conn.close()
 
-# --- Sniffer (Scapy) ---
 def packet_callback(packet):
     if IP in packet and Raw in packet:
         try:
@@ -160,14 +153,17 @@ def start_sniffer_thread():
     except Exception as e:
         print(f"[!] Sniffer Failed (Check Interface Name/Permissions): {e}")
 
-# --- Syslog (UDP) ---
+# Syslog (UDP)
 class SyslogProto(asyncio.DatagramProtocol):
     def datagram_received(self, data: bytes, addr):
-        line = data.decode(errors="ignore").strip()
-        eid = insert_event("syslog", addr[0], "syslog", line)
-        analyze_payload(eid, "syslog", line)
-
-# --- Web Routes ---
+        try:
+            line = data.decode(errors="ignore").strip()
+            if len(line) > 0:  # Only process non-empty lines
+                eid = insert_event("syslog", addr[0], "syslog", line)
+                analyze_payload(eid, "syslog", line)
+        except Exception as e:
+            print(f"[!] Syslog parsing error: {e}")
+            pass
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
