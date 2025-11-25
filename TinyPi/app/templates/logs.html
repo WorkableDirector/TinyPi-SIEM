@@ -8,6 +8,8 @@
       code { font-size: 0.8em; word-break: break-all; }
       .type-packet { color: #198754; }
       .type-syslog { color: #0d6efd; }
+      .action-buttons { display: flex; gap: 10px; margin-bottom: 15px; }
+      .refresh-btn { padding: 5px 10px; font-size: 0.8em; }
   </style>
 </head>
 <body>
@@ -16,6 +18,12 @@
         <h2>Full Event Log</h2>
         <a href="/" role="button" class="outline">Back to Dashboard</a>
     </div>
+    
+    <div class="action-buttons">
+      <button id="clear-logs" class="outline secondary refresh-btn">Clear All Logs</button>
+      <button id="refresh-logs" class="outline refresh-btn">Refresh</button>
+    </div>
+    
     <hr>
     <div style="overflow-x: auto;">
         <table>
@@ -34,5 +42,22 @@
         </table>
     </div>
 </main>
+
+<script>
+  document.getElementById('clear-logs').addEventListener('click', async function() {
+    if (confirm('Are you sure you want to clear all logs?')) {
+      try {
+        await fetch('/reset', { method: 'POST' });
+        window.location.href = '/logs';
+      } catch (e) {
+        console.error("Error clearing logs:", e);
+      }
+    }
+  });
+
+  document.getElementById('refresh-logs').addEventListener('click', function() {
+    window.location.href = '/logs';
+  });
+</script>
 </body>
 </html>
