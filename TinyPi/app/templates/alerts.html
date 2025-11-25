@@ -5,25 +5,46 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Alerts • TinyPi SIEM</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-  <style>code{white-space:pre-wrap}</style>
+  <style>
+    :root {
+      --pico-background-color: #0b1324;
+      --pico-card-background-color: #101b32;
+      --pico-form-element-background-color: #0f172a;
+      --pico-primary: #5eead4;
+    }
+    body { background: #0b1324; color: #e2e8f0; padding: 24px; }
+    main { max-width: 1100px; margin: 0 auto; }
+    code{white-space:pre-wrap; color: #cbd5e1;}
+    table thead { background: rgba(148, 163, 184, 0.08); }
+    table { background: var(--pico-card-background-color); border-radius: 12px; overflow: hidden; box-shadow: 0 15px 35px rgba(0,0,0,0.35); }
+    .badge { padding: 4px 10px; border-radius: 999px; font-size: 0.75em; font-weight: 700; letter-spacing: 0.3px; }
+    .sev-critical { background: #f472b6; color: #0b1324; }
+    .sev-high { background: #fb7185; color: #0b1324; }
+    .sev-medium { background: #fb923c; color: #0b1324; }
+    .sev-low { background: #60a5fa; color: #0b1324; }
+  </style>
 </head>
 <body>
 <main class="container">
-  <h2>Alerts</h2>
-  <a href="/">← Back</a>
-  <div style="margin-bottom: 15px;">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <div>
+      <p style="margin:0; color:#94a3b8; font-size:0.9em;">Triggered detections</p>
+      <h2 style="margin:4px 0 0 0;">Alerts</h2>
+    </div>
+    <a href="/" role="button" class="outline">Back to Dashboard</a>
+  </div>
+  <div style="margin: 15px 0; display:flex; gap:10px;">
     <button id="clear-alerts" class="outline secondary">Clear All Alerts</button>
     <button id="refresh-alerts" class="outline">Refresh</button>
   </div>
   <table>
-    <thead><tr><th>ID</th><th>Time (UTC)</th><th>Type</th><th>Severity</th><th>Description</th><th>Log</th></tr></thead>
+    <thead><tr><th>ID</th><th>Time (UTC)</th><th>Severity</th><th>Description</th><th>Log ID</th></tr></thead>
     <tbody>
       {% for r in rows %}
         <tr>
           <td>{{ r['id'] }}</td>
           <td>{{ r['ts'] }}</td>
-          <td>{{ r['type'] }}</td>
-          <td>{{ r['severity'] }}</td>
+          <td><span class="badge sev-{{ r['severity'] }}">{{ r['severity'] }}</span></td>
           <td><code>{{ r['description'] }}</code></td>
           <td>{{ r['related_event_id'] or '' }}</td>
         </tr>
