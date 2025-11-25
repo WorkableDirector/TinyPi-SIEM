@@ -1,11 +1,12 @@
 import asyncio
 import datetime as dt
+import logging
 import os
 import re
 import sqlite3
+import string
 import threading
-import logging
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -87,7 +88,20 @@ def init_db():
     conn.commit()
     conn.close()
 
-def insert_event(evt_type: str, src: str, dst: str, payload: str) -> int:
+def is_meaningful_payload(payload: str) -> bool:
+    """Return True if the payload looks like human-readable traffic."""
+    if not payload:
+        return False
+
+    printable_chars = sum(1 for c in payload if c in string.printable)
+    printable_ratio = printable_chars / max(len(payload), 1)
+
+    has_words = any(len(part) >= 3 for part in re.split(r"\W+", payload) if part)
+
+    return printable_ratio >= 0.85 and has_words
+
+
+def insert_event(evt_type: str, src: str, dst: str, payload: str) -> tuple[int, str]:
     conn = db()
     cur = conn.cursor()
     ts = dt.datetime.utcnow().isoformat(timespec="seconds")
@@ -98,9 +112,10 @@ def insert_event(evt_type: str, src: str, dst: str, payload: str) -> int:
     row_id = cur.lastrowid
     conn.commit()
     conn.close()
-    return row_id
+    return row_id, ts
 
-def analyze_payload(event_id: int, source_type: str, payload: str):
+
+def analyze_payload(event_id: int, event_ts: str, source_type: str, payload: str):
     conn = db()
     rules = conn.execute("SELECT * FROM rules WHERE source = ?", (source_type,)).fetchall()
     
@@ -110,11 +125,10 @@ def analyze_payload(event_id: int, source_type: str, payload: str):
         try:
             # Compile regex on the fly (in production, cache this)
             if re.search(rule['pattern'], payload_str, re.IGNORECASE):
-                ts = dt.datetime.utcnow().isoformat(timespec="seconds")
                 desc = f"Matched Rule: {rule['name']}"
                 conn.execute(
                     "INSERT INTO alerts(ts, rule_name, severity, description, related_event_id) VALUES(?,?,?,?,?)",
-                    (ts, rule['name'], rule['severity'], desc, event_id)
+                    (event_ts, rule['name'], rule['severity'], desc, event_id)
                 )
                 print(f"[!] ALERT: {rule['name']} triggered by {payload_str[:20]}...")
         except re.error:
@@ -134,12 +148,13 @@ def packet_callback(packet):
                 return
 
             proto = "TCP" if TCP in packet else "UDP" if UDP in packet else "IP"
-            payload_data = packet[Raw].load.decode('utf-8', errors='ignore')
+            payload_data = packet[Raw].load.decode('utf-8', errors='ignore').strip()
 
             # Minimal filtering to avoid logging purely binary junk
-            if len(payload_data) > 4 and any(c.isalnum() for c in payload_data):
-                eid = insert_event("packet", src_ip, f"{dst_ip} ({proto})", payload_data)
-                analyze_payload(eid, "packet", payload_data)
+            if len(payload_data) > 4 and is_meaningful_payload(payload_data):
+                clean_payload = payload_data[:800]
+                eid, ts = insert_event("packet", src_ip, f"{dst_ip} ({proto})", clean_payload)
+                analyze_payload(eid, ts, "packet", clean_payload)
         except Exception:
             pass
 
@@ -155,12 +170,26 @@ def start_sniffer_thread():
 
 # Syslog (UDP)
 class SyslogProto(asyncio.DatagramProtocol):
+    def __init__(self):
+        self.last_seen: dict[tuple[str, str], float] = {}
+        self.dedupe_window = 5.0  # seconds
+
     def datagram_received(self, data: bytes, addr):
         try:
             line = data.decode(errors="ignore").strip()
-            if len(line) > 0:  # Only process non-empty lines
-                eid = insert_event("syslog", addr[0], "syslog", line)
-                analyze_payload(eid, "syslog", line)
+            if len(line) > 0 and is_meaningful_payload(line):  # Only process non-empty, readable lines
+                now = asyncio.get_event_loop().time()
+                sig = (addr[0], line)
+
+                # Drop bursts of identical lines from the same source within the window
+                last_ts = self.last_seen.get(sig)
+                if last_ts and (now - last_ts) < self.dedupe_window:
+                    return
+
+                self.last_seen[sig] = now
+
+                eid, ts = insert_event("syslog", addr[0], "syslog", line)
+                analyze_payload(eid, ts, "syslog", line)
         except Exception as e:
             print(f"[!] Syslog parsing error: {e}")
             pass
@@ -182,6 +211,35 @@ def view_alerts(request: Request):
     rows = conn.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 200").fetchall()
     conn.close()
     return templates.TemplateResponse("alerts.html", {"request": request, "rows": rows})
+
+
+# -- Data management --
+@app.post("/reset/events")
+def clear_events():
+    conn = db()
+    conn.execute("DELETE FROM events")
+    conn.commit()
+    conn.close()
+    return JSONResponse({"status": "ok", "cleared": "events"})
+
+
+@app.post("/reset/alerts")
+def clear_alerts():
+    conn = db()
+    conn.execute("DELETE FROM alerts")
+    conn.commit()
+    conn.close()
+    return JSONResponse({"status": "ok", "cleared": "alerts"})
+
+
+@app.post("/reset/all")
+def clear_all():
+    conn = db()
+    conn.execute("DELETE FROM alerts")
+    conn.execute("DELETE FROM events")
+    conn.commit()
+    conn.close()
+    return JSONResponse({"status": "ok", "cleared": "all"})
 
 # -- Rules Management --
 @app.get("/rules", response_class=HTMLResponse)

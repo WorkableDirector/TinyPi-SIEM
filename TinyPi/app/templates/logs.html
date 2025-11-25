@@ -1,38 +1,59 @@
 <!doctype html>
 <html>
 <head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Log Explorer</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <style>
-      body { padding: 20px; }
-      code { font-size: 0.8em; word-break: break-all; }
-      .type-packet { color: #198754; }
-      .type-syslog { color: #0d6efd; }
+      :root {
+        --pico-background-color: #0b1324;
+        --pico-card-background-color: #101b32;
+        --pico-form-element-background-color: #0f172a;
+        --pico-primary: #5eead4;
+      }
+      body {
+        padding: 24px;
+        background: #0b1324;
+        color: #e2e8f0;
+      }
+      main {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      code { font-size: 0.85em; word-break: break-word; color: #cbd5e1; }
+      .type-packet { background: rgba(94, 234, 212, 0.15); color: #5eead4; }
+      .type-syslog { background: rgba(96, 165, 250, 0.15); color: #93c5fd; }
+      .pill { padding: 4px 10px; border-radius: 999px; font-weight: 700; font-size: 0.75em; letter-spacing: 0.3px; }
       .action-buttons { display: flex; gap: 10px; margin-bottom: 15px; }
-      .refresh-btn { padding: 5px 10px; font-size: 0.8em; }
+      .refresh-btn { padding: 8px 14px; font-size: 0.9em; }
+      table thead { background: rgba(148, 163, 184, 0.08); }
+      table { background: var(--pico-card-background-color); border-radius: 12px; overflow: hidden; box-shadow: 0 15px 35px rgba(0,0,0,0.35); }
   </style>
 </head>
 <body>
 <main class="container">
     <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h2>Full Event Log</h2>
+        <div>
+          <p style="margin:0; color:#94a3b8; font-size:0.9em;">Investigate collected events</p>
+          <h2 style="margin:4px 0 0 0;">Full Event Log</h2>
+        </div>
         <a href="/" role="button" class="outline">Back to Dashboard</a>
     </div>
-    
+
     <div class="action-buttons">
       <button id="clear-logs" class="outline secondary refresh-btn">Clear All Logs</button>
       <button id="refresh-logs" class="outline refresh-btn">Refresh</button>
     </div>
-    
-    <hr>
+
     <div style="overflow-x: auto;">
         <table>
-            <thead><tr><th>Time</th><th>Type</th><th>Source</th><th>Dest</th><th>Payload</th></tr></thead>
+            <thead><tr><th>Time (UTC)</th><th>Type</th><th>Source</th><th>Dest</th><th>Payload</th></tr></thead>
             <tbody>
                 {% for row in rows %}
                 <tr>
                     <td><small>{{ row.ts }}</small></td>
-                    <td class="type-{{ row.type }}"><strong>{{ row.type }}</strong></td>
+                    <td><span class="pill type-{{ row.type }}">{{ row.type|upper }}</span></td>
                     <td>{{ row.src }}</td>
                     <td>{{ row.dst }}</td>
                     <td><code>{{ row.payload }}</code></td>
@@ -47,7 +68,7 @@
   document.getElementById('clear-logs').addEventListener('click', async function() {
     if (confirm('Are you sure you want to clear all logs?')) {
       try {
-        await fetch('/reset', { method: 'POST' });
+        await fetch('/reset/events', { method: 'POST' });
         window.location.href = '/logs';
       } catch (e) {
         console.error("Error clearing logs:", e);
