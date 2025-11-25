@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Packets • TinyPi SIEM</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    :root {
+      --pico-background-color: #0b1324;
+      --pico-card-background-color: #101b32;
+      --pico-form-element-background-color: #0f172a;
+      --pico-primary: #5eead4;
+    }
+    body { background: #0b1324; color: #e2e8f0; padding: 24px; }
+    main { max-width: 900px; margin: 0 auto; }
+    article { background: var(--pico-card-background-color); padding: 20px; border-radius: 12px; box-shadow: 0 15px 35px rgba(0,0,0,0.35); }
+  </style>
+</head>
+<body>
+<main class="container">
+  <nav>
+    <ul><li><strong>TinyPi SIEM</strong></li></ul>
+    <ul>
+      <li><a href="/">Dashboard</a></li>
+      <li><a href="/logs">Syslog</a></li>
+      <li><a href="/alerts">Alerts</a></li>
+      <li><a href="/rules">Rules</a></li>
+      <li><a href="/packets" class="contrast">Packets</a></li>
+    </ul>
+  </nav>
+
+  <article>
+    <h3 style="margin-bottom:8px;">Packet capture disabled</h3>
+    <p style="color:#94a3b8;">Per configuration, TinyPi is no longer capturing or storing network packets. The dashboard, logs, and rules only reflect syslog data from the UniFi Gateway. Packet capture can be reintroduced later in its own module without affecting syslog visibility.</p>
+  </article>
+</main>
+</body>
+</html>

@@ -1,30 +1,23 @@
 import asyncio
 import datetime as dt
-import logging
 import os
 import re
 import sqlite3
 import string
-import threading
 from typing import Any, Dict, List
 
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from scapy.all import sniff, IP, TCP, UDP, Raw
-
 DB_PATH = os.environ.get("SIEM_DB", "/data/siem.db")
 UDP_PORT = 514
-SNIFF_INTERFACE = os.environ.get("SIEM_INTERFACE", "eth0")
+UNIFI_GATEWAY_IP = os.environ.get("UNIFI_GATEWAY_IP")
 WEB_PORT = int(os.environ.get("SIEM_PORT", 8000))
 
 DEFAULT_RULES = [
     ("ssh_brute", "syslog", "SSH Brute Force", "medium", "(Failed password|Invalid user|error: PAM: Authentication failure)"),
     ("sudo_abuse", "syslog", "Sudo Auth Failure", "medium", "authentication failure"),
-    ("sql_injection", "packet", "SQL Injection Attempt", "critical", "(UNION SELECT|OR 1=1|DROP TABLE|Waitfor delay)"),
-    ("xss_attempt", "packet", "XSS Script Injection", "high", "(<script>|javascript:alert)"),
-    ("passwd_file", "packet", "Sensitive File Access", "high", "(/etc/passwd|/win.ini)"),
 ]
 
 app = FastAPI(title="TinyPi SIEM", version="3.0")
@@ -85,6 +78,9 @@ def init_db():
             DEFAULT_RULES
         )
 
+    # Remove any legacy packet rules now that packet capture is disabled
+    cur.execute("DELETE FROM rules WHERE source = 'packet'")
+
     conn.commit()
     conn.close()
 
@@ -137,37 +133,6 @@ def analyze_payload(event_id: int, event_ts: str, source_type: str, payload: str
     conn.commit()
     conn.close()
 
-def packet_callback(packet):
-    if IP in packet and Raw in packet:
-        try:
-            src_ip = packet[IP].src
-            dst_ip = packet[IP].dst
-            
-            # Filter noise (localhost communication)
-            if src_ip == "127.0.0.1" or dst_ip == "127.0.0.1":
-                return
-
-            proto = "TCP" if TCP in packet else "UDP" if UDP in packet else "IP"
-            payload_data = packet[Raw].load.decode('utf-8', errors='ignore').strip()
-
-            # Minimal filtering to avoid logging purely binary junk
-            if len(payload_data) > 4 and is_meaningful_payload(payload_data):
-                clean_payload = payload_data[:800]
-                eid, ts = insert_event("packet", src_ip, f"{dst_ip} ({proto})", clean_payload)
-                analyze_payload(eid, ts, "packet", clean_payload)
-        except Exception:
-            pass
-
-def start_sniffer_thread():
-    import time
-    time.sleep(3) # Let DB init
-    print(f"[*] Sniffer thread started on {SNIFF_INTERFACE}")
-    try:
-        # filter="ip" ensures we capture traffic
-        sniff(iface=SNIFF_INTERFACE, prn=packet_callback, store=0, filter="ip")
-    except Exception as e:
-        print(f"[!] Sniffer Failed (Check Interface Name/Permissions): {e}")
-
 # Syslog (UDP)
 class SyslogProto(asyncio.DatagramProtocol):
     def __init__(self):
@@ -177,6 +142,9 @@ class SyslogProto(asyncio.DatagramProtocol):
     def datagram_received(self, data: bytes, addr):
         try:
             line = data.decode(errors="ignore").strip()
+            if UNIFI_GATEWAY_IP and addr[0] != UNIFI_GATEWAY_IP:
+                return
+
             if len(line) > 0 and is_meaningful_payload(line):  # Only process non-empty, readable lines
                 now = asyncio.get_event_loop().time()
                 sig = (addr[0], line)
@@ -198,10 +166,15 @@ class SyslogProto(asyncio.DatagramProtocol):
 def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+
+@app.get("/packets", response_class=HTMLResponse)
+def packets_disabled(request: Request):
+    return templates.TemplateResponse("packets.html", {"request": request})
+
 @app.get("/logs", response_class=HTMLResponse)
 def view_logs(request: Request):
     conn = db()
-    rows = conn.execute("SELECT * FROM events ORDER BY id DESC LIMIT 200").fetchall()
+    rows = conn.execute("SELECT * FROM events WHERE type = 'syslog' ORDER BY id DESC LIMIT 200").fetchall()
     conn.close()
     return templates.TemplateResponse("logs.html", {"request": request, "rows": rows})
 
@@ -245,16 +218,25 @@ def clear_all():
 @app.get("/rules", response_class=HTMLResponse)
 def view_rules(request: Request):
     conn = db()
-    rows = conn.execute("SELECT * FROM rules ORDER BY id").fetchall()
+    rows = conn.execute("SELECT * FROM rules WHERE source = 'syslog' ORDER BY id").fetchall()
     conn.close()
     return templates.TemplateResponse("rules.html", {"request": request, "rows": rows})
 
 @app.post("/rules/add")
-def add_rule(name: str = Form(...), severity: str = Form(...), source: str = Form(...), pattern: str = Form(...)):
+def add_rule(name: str = Form(...), severity: str = Form(...), pattern: str = Form(...)):
+    severity = severity.lower()
+    if severity not in {"low", "medium", "high", "critical"}:
+        return HTMLResponse("Invalid severity", status_code=400)
+
+    try:
+        re.compile(pattern)
+    except re.error:
+        return HTMLResponse("Invalid regex pattern", status_code=400)
+
     conn = db()
     conn.execute(
         "INSERT INTO rules (rule_id, source, name, severity, pattern) VALUES (?,?,?,?,?)",
-        (name.lower().replace(" ", "_"), source, name, severity, pattern)
+        (name.lower().replace(" ", "_"), "syslog", name, severity, pattern)
     )
     conn.commit()
     conn.close()
@@ -274,13 +256,13 @@ def get_stats():
     cur = conn.cursor()
     stats = {
         "counts": {
-            "events": cur.execute("SELECT COUNT(*) c FROM events").fetchone()['c'],
+            "events": cur.execute("SELECT COUNT(*) c FROM events WHERE type = 'syslog'").fetchone()['c'],
             "alerts": cur.execute("SELECT COUNT(*) c FROM alerts").fetchone()['c']
         },
         "charts": {"severity": cur.execute("SELECT severity, COUNT(*) c FROM alerts GROUP BY severity").fetchall()},
         "feed": {
             "alerts": cur.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 5").fetchall(),
-            "logs": cur.execute("SELECT * FROM events ORDER BY id DESC LIMIT 5").fetchall()
+            "logs": cur.execute("SELECT * FROM events WHERE type = 'syslog' ORDER BY id DESC LIMIT 5").fetchall()
         }
     }
     conn.close()
@@ -289,7 +271,5 @@ def get_stats():
 @app.on_event("startup")
 async def startup_event():
     init_db()
-    t = threading.Thread(target=start_sniffer_thread, daemon=True)
-    t.start()
     loop = asyncio.get_running_loop()
     await loop.create_datagram_endpoint(lambda: SyslogProto(), local_addr=("0.0.0.0", UDP_PORT))

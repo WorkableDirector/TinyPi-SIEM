@@ -121,9 +121,10 @@
     <ul><li><strong>TinyPi SIEM</strong></li></ul>
     <ul>
       <li><a href="/" class="contrast">Dashboard</a></li>
-      <li><a href="/logs">Logs</a></li>
+      <li><a href="/logs">Syslog</a></li>
       <li><a href="/alerts">Alerts</a></li>
       <li><a href="/rules">Rules</a></li>
+      <li><a href="/packets">Packets</a></li>
     </ul>
   </nav>
 
@@ -169,13 +170,13 @@
     <!-- Logs Column -->
     <div class="panel">
         <div class="section-header">
-          <h4>Live Traffic</h4>
-          <small style="color:#94a3b8">Showing newest first</small>
+          <h4>Syslog Feed</h4>
+          <small style="color:#94a3b8">Only showing incoming syslog from the UniFi Gateway</small>
         </div>
         <table class="striped">
-            <thead><tr><th>Time</th><th>Type</th><th>Source</th><th>Payload</th></tr></thead>
+            <thead><tr><th>Time</th><th>Source</th><th>Payload</th></tr></thead>
             <tbody id="log-table">
-                <tr><td colspan="4">Loading...</td></tr>
+                <tr><td colspan="3">Loading...</td></tr>
             </tbody>
         </table>
     </div>
@@ -215,12 +216,11 @@
             const logRows = data.feed.logs.map(l =>
                 `<tr>
                     <td><small>${formatTime(l.ts)}</small></td>
-                    <td><span class="pill type-${l.type}">${l.type.toUpperCase()}</span></td>
                     <td><small>${l.src}</small></td>
                     <td><code>${l.payload.substring(0, 60)}${l.payload.length > 60 ? '…' : ''}</code></td>
                 </tr>`
             ).join('');
-            document.getElementById('log-table').innerHTML = logRows || '<tr><td colspan="4">No traffic yet</td></tr>';
+            document.getElementById('log-table').innerHTML = logRows || '<tr><td colspan="3">No syslog traffic yet</td></tr>';
 
             // 4. Update Chart
             const sevLabels = data.charts.severity.map(x => x.severity);
