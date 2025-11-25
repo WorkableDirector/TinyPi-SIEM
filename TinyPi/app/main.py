@@ -15,7 +15,7 @@ from scapy.all import sniff, IP, TCP, UDP, Raw
 
 # --- Configuration ---
 DB_PATH = os.environ.get("SIEM_DB", "/data/siem.db")
-UDP_PORT = 5514
+UDP_PORT = 514
 SNIFF_INTERFACE = os.environ.get("SIEM_INTERFACE", "eth0")
 WEB_PORT = int(os.environ.get("SIEM_PORT", 8000))
 
