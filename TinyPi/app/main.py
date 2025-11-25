@@ -210,30 +210,6 @@ def delete_rule(rule_id: int):
     conn.close()
     return RedirectResponse("/rules", status_code=303)
 
-# -- Simulation --
-@app.get("/simulate", response_class=HTMLResponse)
-def view_simulate(request: Request):
-    conn = db()
-    rules = conn.execute("SELECT * FROM rules").fetchall()
-    conn.close()
-    return templates.TemplateResponse("simulate.html", {"request": request, "rules": rules})
-
-@app.post("/simulate/attack")
-def simulate_attack(payload: str = Form(...), source: str = Form(...)):
-    # Fake an injection
-    eid = insert_event(source, "SIMULATOR", "127.0.0.1", payload)
-    analyze_payload(eid, source, payload)
-    return RedirectResponse("/alerts", status_code=303)
-
-@app.post("/reset")
-def reset_db():
-    conn = db()
-    conn.execute("DELETE FROM events")
-    conn.execute("DELETE FROM alerts")
-    conn.commit()
-    conn.close()
-    return RedirectResponse("/", status_code=303)
-
 @app.get("/api/stats")
 def get_stats():
     conn = db()
