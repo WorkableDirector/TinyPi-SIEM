@@ -2,126 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SIEM Dashboard</title>
+  <title>Rules Manager • TinyPi SIEM</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {
       --pico-background-color: #0b1324;
       --pico-card-background-color: #101b32;
       --pico-form-element-background-color: #0f172a;
       --pico-primary: #5eead4;
-      --pico-font-size: 15px;
     }
-
-    body {
-      background: radial-gradient(circle at 20% 20%, rgba(94, 234, 212, 0.08), transparent 25%),
-                  radial-gradient(circle at 80% 0%, rgba(94, 234, 212, 0.05), transparent 30%),
-                  #0b1324;
-      color: #e2e8f0;
-      min-height: 100vh;
-    }
-
-    nav ul:first-child strong {
-      color: #5eead4;
-      letter-spacing: 0.5px;
-    }
-
-    nav ul li a {
-      color: #cbd5e1;
-    }
-
-    nav ul li a:hover,
-    nav ul li a:focus {
-      color: #5eead4;
-    }
-
-    .stat-card {
-      text-align: center;
-      padding: 20px;
-      background: linear-gradient(135deg, rgba(94, 234, 212, 0.08), rgba(99, 102, 241, 0.08));
-      border-radius: 12px;
-      margin-bottom: 20px;
-      color: #e2e8f0;
-      border: 1px solid rgba(226, 232, 240, 0.05);
-      box-shadow: 0 15px 45px rgba(0, 0, 0, 0.35);
-    }
-
-    .stat-card h2 {
-      margin: 0;
-      font-size: 2.6rem;
-    }
-
-    .panel {
-      background: var(--pico-card-background-color);
-      border-radius: 12px;
-      padding: 16px;
-      box-shadow: 0 15px 45px rgba(0, 0, 0, 0.35);
-      border: 1px solid rgba(226, 232, 240, 0.05);
-    }
-
-    table {
-      margin-bottom: 0;
-    }
-
-    table thead {
-      background: rgba(148, 163, 184, 0.1);
-    }
-
-    table td, table th {
-      vertical-align: middle;
-    }
-
-    .badge {
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 0.75em;
-      font-weight: bold;
-      color: #0b1324;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
-    }
-
-    .sev-critical { background-color: #f472b6; }
-    .sev-high { background-color: #fb7185; }
-    .sev-medium { background-color: #fb923c; }
-    .sev-low { background-color: #60a5fa; }
-
-    .pill {
-      display: inline-block;
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 0.75em;
-      font-weight: 700;
-      letter-spacing: 0.3px;
-    }
-
-    .type-syslog { background: rgba(96, 165, 250, 0.15); color: #93c5fd; }
-
-    code {
-      font-size: 0.8em;
-      word-wrap: break-word;
-      color: #cbd5e1;
-    }
-
-    .section-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 12px;
-    }
-
-    .log-summary {
-      max-width: 360px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      color: #cbd5e1;
-      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-      font-size: 0.85em;
-    }
+    body { background: #0b1324; color: #e2e8f0; padding: 24px; }
+    main { max-width: 1000px; margin: 0 auto; }
+    nav ul:first-child strong { color: #5eead4; }
+    article, table { background: var(--pico-card-background-color); border-radius: 12px; box-shadow: 0 15px 35px rgba(0,0,0,0.35); }
+    table thead { background: rgba(148, 163, 184, 0.08); }
+    code { color: #cbd5e1; }
   </style>
 </head>
 <body>
@@ -129,155 +24,43 @@
   <nav>
     <ul><li><strong>TinyPi SIEM</strong></li></ul>
     <ul>
-      <li><a href="/" class="contrast">Dashboard</a></li>
-      <li><a href="/logs">Syslog</a></li>
+      <li><a href="/">Dashboard</a></li>
+      <li><a href="/logs">Logs</a></li>
       <li><a href="/alerts">Alerts</a></li>
-      <li><a href="/rules">Rules</a></li>
+      <li><a href="/rules" class="contrast">Rules</a></li>
     </ul>
   </nav>
 
-  <!-- KPI Cards -->
-  <div class="grid">
-    <div class="stat-card">
-        <small>Total Events</small>
-        <h2 id="count-events">0</h2>
-    </div>
-    <div class="stat-card">
-        <small>Total Alerts</small>
-        <h2 id="count-alerts" style="color: #dc3545;">0</h2>
-    </div>
-    <div>
-        <canvas id="sevChart" style="max-height: 120px;"></canvas>
-    </div>
-  </div>
+  <h2>Detection Rules</h2>
+  <p>Configure what the system should flag as suspicious from the UniFi Gateway syslog feed.</p>
 
-  <hr>
+  <article>
+    <header><strong>Add Custom Rule</strong></header>
+    <form action="/rules/add" method="POST" class="grid">
+      <input type="text" name="name" placeholder="Rule Name (e.g. Nmap Scan)" required>
+      <select name="severity">
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+        <option value="critical">Critical</option>
+      </select>
+      <input type="text" name="pattern" placeholder="Regex Pattern (e.g. 'nmap')" required>
+      <button type="submit">Save Rule</button>
+    </form>
+  </article>
 
-  <div class="section-header" style="justify-content: flex-end; margin-bottom: 18px;">
-    <div style="display:flex; gap:10px; align-items:center;">
-      <small style="color:#94a3b8;">Maintenance</small>
-      <button id="clear-all" class="outline secondary" style="margin:0;">Clear All Data</button>
-    </div>
-  </div>
-
-  <div class="grid">
-    <!-- Alerts Column -->
-    <div class="panel">
-        <div class="section-header">
-          <h4>Recent Alerts</h4>
-          <small style="color:#94a3b8">Updated live</small>
-        </div>
-        <table class="striped">
-            <thead><tr><th>Time</th><th>Severity</th><th>Rule</th></tr></thead>
-            <tbody id="alert-table">
-                <tr><td colspan="3">Loading...</td></tr>
-            </tbody>
-        </table>
-    </div>
-
-    <!-- Logs Column -->
-    <div class="panel">
-        <div class="section-header">
-          <h4>Syslog Feed</h4>
-          <small style="color:#94a3b8">Only showing incoming syslog from the UniFi Gateway</small>
-        </div>
-        <table class="striped">
-            <thead><tr><th>Time</th><th>Source / App</th><th>Summary</th></tr></thead>
-            <tbody id="log-table">
-                <tr><td colspan="3">Loading...</td></tr>
-            </tbody>
-        </table>
-    </div>
-  </div>
-
+  <table>
+    <thead><tr><th>Name</th><th>Severity</th><th>Regex Pattern</th><th>Action</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><strong>{{ r.name }}</strong></td>
+        <td>{{ r.severity }}</td>
+        <td><code>{{ r.pattern }}</code></td>
+        <td><a href="/rules/delete/{{ r.id }}" role="button" class="outline secondary" style="padding:2px 10px; font-size:0.8em;">Delete</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </main>
-
-<script>
-    let chartInstance = null;
-
-    const formatTime = (ts) => {
-        if (!ts) return '-';
-        const dt = new Date(`${ts}Z`);
-        return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    };
-
-    async function updateDashboard() {
-        try {
-            const response = await fetch('/api/stats');
-            const data = await response.json();
-
-            // 1. Update Counts
-            document.getElementById('count-events').innerText = data.counts.events;
-            document.getElementById('count-alerts').innerText = data.counts.alerts;
-
-            // 2. Update Alerts Table
-            const alertRows = data.feed.alerts.map(a =>
-                `<tr>
-                    <td><small>${formatTime(a.ts)}</small></td>
-                    <td><span class="badge sev-${a.severity}">${a.severity}</span></td>
-                    <td><small>${a.rule_name}</small></td>
-                </tr>`
-            ).join('');
-            document.getElementById('alert-table').innerHTML = alertRows || '<tr><td colspan="3">No alerts yet</td></tr>';
-
-            // 3. Update Logs Table
-            const logRows = data.feed.logs.map(l => {
-                const summary = l.summary || l.payload || '';
-                const app = l.app ? l.app : 'syslog';
-                return `
-                <tr>
-                    <td><small>${formatTime(l.ts)}</small></td>
-                    <td><small>${l.src}</small><br><span class="pill type-syslog">${app}</span></td>
-                    <td><div class="log-summary" title="${summary}">${summary}</div></td>
-                </tr>`;
-            }).join('');
-            document.getElementById('log-table').innerHTML = logRows || '<tr><td colspan="3">No syslog traffic yet</td></tr>';
-
-            // 4. Update Chart
-            const sevLabels = data.charts.severity.map(x => x.severity);
-            const sevCounts = data.charts.severity.map(x => x.c);
-            const ctx = document.getElementById('sevChart');
-
-            if (chartInstance) {
-                chartInstance.data.labels = sevLabels;
-                chartInstance.data.datasets[0].data = sevCounts;
-                chartInstance.update();
-            } else {
-                chartInstance = new Chart(ctx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: sevLabels,
-                        datasets: [{
-                            data: sevCounts,
-                            backgroundColor: ['#f472b6', '#fb7185', '#fb923c', '#60a5fa'],
-                            borderWidth: 0
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        plugins: { legend: { display: false } }
-                    }
-                });
-            }
-
-        } catch (e) {
-            console.error("Error fetching stats:", e);
-        }
-    }
-
-    // Refresh every 2 seconds
-    setInterval(updateDashboard, 2000);
-    updateDashboard();
-
-    document.getElementById('clear-all').addEventListener('click', async () => {
-        if (!confirm('Clear all stored events and alerts?')) return;
-        try {
-            await fetch('/reset/all', { method: 'POST' });
-            updateDashboard();
-        } catch (e) {
-            console.error('Error clearing data:', e);
-        }
-    });
-</script>
 </body>
 </html>
