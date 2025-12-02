@@ -203,15 +203,60 @@ def home(request: Request):
 
 
 @app.get("/logs", response_class=HTMLResponse)
-def view_logs(request: Request):
+def view_logs(
+    request: Request,
+    search: str = "",
+    app: str = "",
+    host: str = "",
+    source: str = "",
+    limit: int = 100,
+):
+    limit = max(10, min(limit, 500))
+
     conn = db()
-    rows = conn.execute("SELECT * FROM events WHERE type = 'syslog' ORDER BY id DESC LIMIT 200").fetchall()
+    params: list[Any] = []
+    sql = "SELECT * FROM events WHERE type = 'syslog'"
+
+    if source:
+        sql += " AND src LIKE ?"
+        params.append(f"%{source}%")
+
+    if search:
+        sql += " AND payload LIKE ?"
+        params.append(f"%{search}%")
+
+    sql += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+
+    rows = conn.execute(sql, params).fetchall()
+
     enriched = []
     for row in rows:
         parsed = parse_syslog_payload(row.get("payload", ""))
+
+        if app and app.lower() not in (parsed.get("app") or "").lower():
+            continue
+
+        if host and host.lower() not in (parsed.get("host") or "").lower():
+            continue
+
         enriched.append({**row, **parsed})
+
     conn.close()
-    return templates.TemplateResponse("logs.html", {"request": request, "rows": enriched})
+    return templates.TemplateResponse(
+        "logs.html",
+        {
+            "request": request,
+            "rows": enriched,
+            "filters": {
+                "search": search,
+                "app": app,
+                "host": host,
+                "source": source,
+                "limit": limit,
+            },
+        },
+    )
 
 @app.get("/alerts", response_class=HTMLResponse)
 def view_alerts(request: Request):
