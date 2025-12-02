@@ -215,7 +215,7 @@ class SyslogProto(asyncio.DatagramProtocol):
             if UNIFI_GATEWAY_IP and addr[0] != UNIFI_GATEWAY_IP:
                 return
 
-            if len(line) > 0 and is_meaningful_payload(line):  # Only process non-empty, readable lines
+            if len(line) > 0:  # Only process non-empty lines
                 now = asyncio.get_event_loop().time()
                 sig = (addr[0], line)
 
