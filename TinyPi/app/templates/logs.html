@@ -51,8 +51,6 @@
       .log-meta { display:flex; gap:8px; align-items:center; flex-wrap: wrap; }
       .log-time { color:#cbd5e1; font-size:0.9em; }
       .log-summary { color:#e2e8f0; margin: 6px 0 10px 0; line-height:1.4; }
-      details summary { cursor: pointer; color:#93c5fd; }
-      details pre { background: rgba(15, 23, 42, 0.8); padding: 10px; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.1); }
       .divider { height: 1px; background: rgba(148, 163, 184, 0.15); margin: 12px 0; border: none; }
   </style>
 </head>
@@ -116,17 +114,24 @@
         <article class="log-card">
             <header>
               <div class="log-meta">
+                {% if row.count > 1 %}
+                    <span class="pill" style="background-color: #f472b6; color: #0b1324;">x{{ row.count }}</span>
+                {% endif %}
+
                 <span class="pill host">{{ row.src }}</span>
                 {% if row.app %}<span class="pill app">{{ row.app }}</span>{% endif %}
               </div>
               <span class="log-time">{{ row.ts }} UTC</span>
             </header>
-            <p class="log-summary">{{ row.summary }}</p>
-            <hr class="divider" />
-            <details>
-              <summary>View full payload</summary>
-              <pre><code>{{ row.message }}</code></pre>
-            </details>
+            
+            <p class="log-summary" style="font-weight: bold; color: #5eead4;">
+                {{ row.human_text }}
+            </p>
+            
+            <small style="color: #64748b; font-size: 0.8em; display: block; margin-top: 4px;">
+                Raw: {{ row.summary }}
+            </small>
+
         </article>
         {% else %}
         <p>No syslog entries yet. Waiting for traffic from the gateway…</p>
