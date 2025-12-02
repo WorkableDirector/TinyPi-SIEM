@@ -113,6 +113,16 @@
       justify-content: space-between;
       margin-bottom: 12px;
     }
+
+    .log-summary {
+      max-width: 360px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #cbd5e1;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.85em;
+    }
   </style>
 </head>
 <body>
@@ -174,7 +184,7 @@
           <small style="color:#94a3b8">Only showing incoming syslog from the UniFi Gateway</small>
         </div>
         <table class="striped">
-            <thead><tr><th>Time</th><th>Source</th><th>Payload</th></tr></thead>
+            <thead><tr><th>Time</th><th>Source / App</th><th>Summary</th></tr></thead>
             <tbody id="log-table">
                 <tr><td colspan="3">Loading...</td></tr>
             </tbody>
@@ -213,13 +223,16 @@
             document.getElementById('alert-table').innerHTML = alertRows || '<tr><td colspan="3">No alerts yet</td></tr>';
 
             // 3. Update Logs Table
-            const logRows = data.feed.logs.map(l =>
-                `<tr>
+            const logRows = data.feed.logs.map(l => {
+                const summary = l.summary || l.payload || '';
+                const app = l.app ? l.app : 'syslog';
+                return `
+                <tr>
                     <td><small>${formatTime(l.ts)}</small></td>
-                    <td><small>${l.src}</small></td>
-                    <td><code>${l.payload.substring(0, 60)}${l.payload.length > 60 ? '…' : ''}</code></td>
-                </tr>`
-            ).join('');
+                    <td><small>${l.src}</small><br><span class="pill type-syslog">${app}</span></td>
+                    <td><div class="log-summary" title="${summary}">${summary}</div></td>
+                </tr>`;
+            }).join('');
             document.getElementById('log-table').innerHTML = logRows || '<tr><td colspan="3">No syslog traffic yet</td></tr>';
 
             // 4. Update Chart
