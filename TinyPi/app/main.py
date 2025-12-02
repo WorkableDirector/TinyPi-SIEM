@@ -10,7 +10,6 @@ from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-
 DB_PATH = os.environ.get("SIEM_DB", "/data/siem.db")
 UDP_PORT = int(os.environ.get("SIEM_SYSLOG_PORT", 5514))
 UNIFI_GATEWAY_IP = os.environ.get("UNIFI_GATEWAY_IP")
@@ -34,9 +33,6 @@ def dict_factory(cursor, row):
     return d
 
 def db() -> sqlite3.Connection:
-    db_dir = os.path.dirname(DB_PATH)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = dict_factory
     return conn
@@ -171,38 +167,6 @@ def parse_syslog_payload(payload: str) -> Dict[str, Any]:
         "host": groups.get("host"),
     }
 
-def humanize_log(app: str, message: str) -> str:
-    """Converts technical syslog jargon into plain English summaries."""
-    msg_lower = message.lower()
-    app_lower = (app or "").lower()
-
-    # Firewall / Network
-    if "ufw" in message and "block" in msg_lower:
-        return "Firewall blocked a connection attempt"
-    if "dhcp" in app_lower or "dnsmasq" in app_lower:
-        if "dhcpresult" in msg_lower:
-            return "Device assigned IP address"
-        return "DHCP/DNS network activity"
-    
-    # System / Security
-    if "sshd" in app_lower:
-        if "accepted password" in msg_lower:
-            return "Successful SSH login"
-        if "failed password" in msg_lower:
-            return "Failed SSH login attempt"
-        if "disconnected" in msg_lower:
-            return "SSH session disconnected"
-        return "SSH Remote Access Activity"
-    
-    if "sudo" in app_lower:
-        return "User utilized Administrator (sudo) privileges"
-    
-    if "kernel" in app_lower:
-        return "System Kernel Notification"
-
-    # Default fallback: Clean up the raw message slightly
-    return message[:100] + "..." if len(message) > 100 else message
-
 # Syslog (UDP)
 class SyslogProto(asyncio.DatagramProtocol):
     def __init__(self):
@@ -215,7 +179,7 @@ class SyslogProto(asyncio.DatagramProtocol):
             if UNIFI_GATEWAY_IP and addr[0] != UNIFI_GATEWAY_IP:
                 return
 
-            if len(line) > 0:  # Only process non-empty lines
+            if len(line) > 0 and is_meaningful_payload(line):  # Only process non-empty, readable lines
                 now = asyncio.get_event_loop().time()
                 sig = (addr[0], line)
 
@@ -261,50 +225,29 @@ def view_logs(
         sql += " AND payload LIKE ?"
         params.append(f"%{search}%")
 
-    # Order by newest first, fetch extra to account for grouping
     sql += " ORDER BY id DESC LIMIT ?"
-    params.append(limit * 3)
+    params.append(limit)
 
     rows = conn.execute(sql, params).fetchall()
-    conn.close()
 
-    # --- AGGREGATION LOGIC ---
-    grouped_logs = []
-    last_summary = None
-    
+    enriched = []
     for row in rows:
         parsed = parse_syslog_payload(row.get("payload", ""))
-        
+
         if app and app.lower() not in (parsed.get("app") or "").lower():
             continue
 
         if host and host.lower() not in (parsed.get("host") or "").lower():
             continue
 
-        human_text = humanize_log(parsed.get("app"), parsed.get("message"))
-        
-        # Deduplication check
-        if last_summary and last_summary['human_text'] == human_text and last_summary['src'] == row['src']:
-            last_summary['count'] += 1
-            # Keep the newest timestamp
-            last_summary['ts'] = row['ts'] 
-        else:
-            log_entry = {
-                **row, 
-                **parsed, 
-                "human_text": human_text,
-                "count": 1
-            }
-            grouped_logs.append(log_entry)
-            last_summary = log_entry
+        enriched.append({**row, **parsed})
 
-    final_logs = grouped_logs[:limit]
-
+    conn.close()
     return templates.TemplateResponse(
         "logs.html",
         {
             "request": request,
-            "rows": final_logs,
+            "rows": enriched,
             "filters": {
                 "search": search,
                 "app": app,
