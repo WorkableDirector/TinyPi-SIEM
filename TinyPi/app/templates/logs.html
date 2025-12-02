@@ -80,11 +80,36 @@
         </div>
     </div>
 
-    <div class="action-buttons">
-      <button id="clear-logs" class="outline secondary refresh-btn">Clear All Syslog</button>
-      <button id="refresh-logs" class="outline refresh-btn">Refresh</button>
-      <small class="subhead">Showing latest {{ rows|length }} entries</small>
-    </div>
+    <form class="action-buttons" method="get" action="/logs" style="align-items:flex-end;">
+      <div>
+        <label for="search">Contains text</label>
+        <input type="search" id="search" name="search" value="{{ filters.search }}" placeholder="ssh, failed password, etc" />
+      </div>
+      <div>
+        <label for="app">App tag</label>
+        <input type="text" id="app" name="app" value="{{ filters.app }}" placeholder="sshd, sudo" />
+      </div>
+      <div>
+        <label for="host">Host</label>
+        <input type="text" id="host" name="host" value="{{ filters.host }}" placeholder="gateway hostname" />
+      </div>
+      <div>
+        <label for="source">Source label</label>
+        <input type="text" id="source" name="source" value="{{ filters.source }}" placeholder="unifi-gateway" />
+      </div>
+      <div>
+        <label for="limit">Max rows</label>
+        <input type="number" id="limit" name="limit" value="{{ filters.limit }}" min="10" max="500" />
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="outline refresh-btn" type="submit">Apply filters</button>
+        <a href="/logs" role="button" class="outline secondary refresh-btn">Reset</a>
+        <button id="refresh-logs" class="outline refresh-btn" type="button">Refresh</button>
+        <button id="clear-logs" class="outline secondary refresh-btn" type="button">Clear All Syslog</button>
+      </div>
+    </form>
+
+    <small class="subhead">Showing {{ rows|length }} entr{{ 'y' if rows|length == 1 else 'ies' }} (limit {{ filters.limit }})</small>
 
     <div class="log-list">
         {% for row in rows %}
