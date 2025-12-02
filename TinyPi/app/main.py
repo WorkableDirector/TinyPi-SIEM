@@ -202,10 +202,6 @@ def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-@app.get("/packets", response_class=HTMLResponse)
-def packets_disabled(request: Request):
-    return templates.TemplateResponse("packets.html", {"request": request})
-
 @app.get("/logs", response_class=HTMLResponse)
 def view_logs(request: Request):
     conn = db()
