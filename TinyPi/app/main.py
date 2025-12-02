@@ -3,7 +3,6 @@ import datetime as dt
 import os
 import re
 import sqlite3
-import string
 from typing import Any, Dict, List
 
 from fastapi import FastAPI, Request, Form
@@ -84,19 +83,6 @@ def init_db():
 
     conn.commit()
     conn.close()
-
-def is_meaningful_payload(payload: str) -> bool:
-    """Return True if the payload looks like human-readable traffic."""
-    if not payload:
-        return False
-
-    printable_chars = sum(1 for c in payload if c in string.printable)
-    printable_ratio = printable_chars / max(len(payload), 1)
-
-    has_words = any(len(part) >= 3 for part in re.split(r"\W+", payload) if part)
-
-    return printable_ratio >= 0.85 and has_words
-
 
 def insert_event(evt_type: str, src: str, dst: str, payload: str) -> tuple[int, str]:
     conn = db()
@@ -179,7 +165,9 @@ class SyslogProto(asyncio.DatagramProtocol):
             if UNIFI_GATEWAY_IP and addr[0] != UNIFI_GATEWAY_IP:
                 return
 
-            if len(line) > 0 and is_meaningful_payload(line):  # Only process non-empty, readable lines
+            # Accept all syslog payloads from the gateway, including terse or numeric-only lines.
+            # Filtering here can drop legitimate events (e.g., DHCP/DNS codes), so only ignore empties.
+            if len(line) > 0:
                 now = asyncio.get_event_loop().time()
                 sig = (addr[0], line)
 
