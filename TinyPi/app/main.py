@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 DB_PATH = os.environ.get("SIEM_DB", "/data/siem.db")
 UDP_PORT = 514
 UNIFI_GATEWAY_IP = os.environ.get("UNIFI_GATEWAY_IP")
+UNIFI_GATEWAY_NAME = os.environ.get("UNIFI_GATEWAY_NAME", "unifi-gateway")
 WEB_PORT = int(os.environ.get("SIEM_PORT", 8000))
 
 DEFAULT_RULES = [
@@ -133,6 +134,39 @@ def analyze_payload(event_id: int, event_ts: str, source_type: str, payload: str
     conn.commit()
     conn.close()
 
+def parse_syslog_payload(payload: str) -> Dict[str, Any]:
+    """Extract a concise summary from a syslog payload."""
+
+    pattern = re.compile(
+        r"<\d+>"  # priority
+        r"(?P<ts>[A-Z][a-z]{2}\s+\d{1,2}\s[\d:]{8})\s"
+        r"(?P<host>[^\s]+)\s"
+        r"(?P<app>[^\s:]+)(?:\[(?P<pid>\d+)\])?:\s?"
+        r"(?P<message>.*)"
+    )
+
+    match = pattern.match(payload)
+    if not match:
+        return {
+            "summary": payload[:160] + ("…" if len(payload) > 160 else ""),
+            "app": "syslog",
+            "message": payload,
+            "host": None,
+        }
+
+    groups = match.groupdict()
+    message = groups.get("message", "").strip()
+    summary = message
+    if len(summary) > 160:
+        summary = summary[:160].rstrip() + "…"
+
+    return {
+        "summary": summary,
+        "app": groups.get("app") or "syslog",
+        "message": message or payload,
+        "host": groups.get("host"),
+    }
+
 # Syslog (UDP)
 class SyslogProto(asyncio.DatagramProtocol):
     def __init__(self):
@@ -156,7 +190,8 @@ class SyslogProto(asyncio.DatagramProtocol):
 
                 self.last_seen[sig] = now
 
-                eid, ts = insert_event("syslog", addr[0], "syslog", line)
+                source_name = UNIFI_GATEWAY_NAME or addr[0]
+                eid, ts = insert_event("syslog", source_name, "syslog", line)
                 analyze_payload(eid, ts, "syslog", line)
         except Exception as e:
             print(f"[!] Syslog parsing error: {e}")
@@ -175,8 +210,12 @@ def packets_disabled(request: Request):
 def view_logs(request: Request):
     conn = db()
     rows = conn.execute("SELECT * FROM events WHERE type = 'syslog' ORDER BY id DESC LIMIT 200").fetchall()
+    enriched = []
+    for row in rows:
+        parsed = parse_syslog_payload(row.get("payload", ""))
+        enriched.append({**row, **parsed})
     conn.close()
-    return templates.TemplateResponse("logs.html", {"request": request, "rows": rows})
+    return templates.TemplateResponse("logs.html", {"request": request, "rows": enriched})
 
 @app.get("/alerts", response_class=HTMLResponse)
 def view_alerts(request: Request):
@@ -262,7 +301,10 @@ def get_stats():
         "charts": {"severity": cur.execute("SELECT severity, COUNT(*) c FROM alerts GROUP BY severity").fetchall()},
         "feed": {
             "alerts": cur.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 5").fetchall(),
-            "logs": cur.execute("SELECT * FROM events WHERE type = 'syslog' ORDER BY id DESC LIMIT 5").fetchall()
+            "logs": [
+                {**row, **parse_syslog_payload(row.get("payload", ""))}
+                for row in cur.execute("SELECT * FROM events WHERE type = 'syslog' ORDER BY id DESC LIMIT 5").fetchall()
+            ]
         }
     }
     conn.close()

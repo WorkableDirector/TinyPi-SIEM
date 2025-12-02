@@ -14,28 +14,53 @@
       }
       body {
         padding: 24px;
-        background: #0b1324;
+        background: radial-gradient(circle at 10% 20%, rgba(94, 234, 212, 0.05), transparent 30%), #0b1324;
         color: #e2e8f0;
       }
       main {
         max-width: 1200px;
         margin: 0 auto;
       }
-      code { font-size: 0.85em; word-break: break-word; color: #cbd5e1; }
-      .type-packet { background: rgba(94, 234, 212, 0.15); color: #5eead4; }
-      .type-syslog { background: rgba(96, 165, 250, 0.15); color: #93c5fd; }
+      code {
+        font-size: 0.9em;
+        word-break: break-word;
+        color: #cbd5e1;
+      }
       .pill { padding: 4px 10px; border-radius: 999px; font-weight: 700; font-size: 0.75em; letter-spacing: 0.3px; }
-      .action-buttons { display: flex; gap: 10px; margin-bottom: 15px; }
+      .pill.app { background: rgba(96, 165, 250, 0.15); color: #93c5fd; border: 1px solid rgba(96, 165, 250, 0.2); }
+      .pill.host { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.15); }
+      .action-buttons { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
       .refresh-btn { padding: 8px 14px; font-size: 0.9em; }
-      table thead { background: rgba(148, 163, 184, 0.08); }
-      table { background: var(--pico-card-background-color); border-radius: 12px; overflow: hidden; box-shadow: 0 15px 35px rgba(0,0,0,0.35); }
+      .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px; }
+      .subhead { color:#94a3b8; margin: 0; }
+      .log-list { display: grid; gap: 12px; margin-top: 12px; }
+      .log-card {
+        background: var(--pico-card-background-color);
+        border-radius: 12px;
+        padding: 14px 16px;
+        border: 1px solid rgba(148, 163, 184, 0.1);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      }
+      .log-card header {
+        display:flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 6px;
+      }
+      .log-meta { display:flex; gap:8px; align-items:center; flex-wrap: wrap; }
+      .log-time { color:#cbd5e1; font-size:0.9em; }
+      .log-summary { color:#e2e8f0; margin: 6px 0 10px 0; line-height:1.4; }
+      details summary { cursor: pointer; color:#93c5fd; }
+      details pre { background: rgba(15, 23, 42, 0.8); padding: 10px; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.1); }
+      .divider { height: 1px; background: rgba(148, 163, 184, 0.15); margin: 12px 0; border: none; }
   </style>
 </head>
 <body>
 <main class="container">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
+    <div class="page-header">
         <div>
-          <p style="margin:0; color:#94a3b8; font-size:0.9em;">Investigate UniFi Gateway syslog messages</p>
+          <p class="subhead">Investigate UniFi Gateway syslog messages</p>
           <h2 style="margin:4px 0 0 0;">Syslog Log</h2>
         </div>
         <a href="/" role="button" class="outline">Back to Dashboard</a>
@@ -44,21 +69,29 @@
     <div class="action-buttons">
       <button id="clear-logs" class="outline secondary refresh-btn">Clear All Syslog</button>
       <button id="refresh-logs" class="outline refresh-btn">Refresh</button>
+      <small class="subhead">Showing latest {{ rows|length }} entries</small>
     </div>
 
-    <div style="overflow-x: auto;">
-        <table>
-            <thead><tr><th>Time (UTC)</th><th>Source</th><th>Payload</th></tr></thead>
-            <tbody>
-                {% for row in rows %}
-                <tr>
-                    <td><small>{{ row.ts }}</small></td>
-                    <td>{{ row.src }}</td>
-                    <td><code>{{ row.payload }}</code></td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="log-list">
+        {% for row in rows %}
+        <article class="log-card">
+            <header>
+              <div class="log-meta">
+                <span class="pill host">{{ row.src }}</span>
+                {% if row.app %}<span class="pill app">{{ row.app }}</span>{% endif %}
+              </div>
+              <span class="log-time">{{ row.ts }} UTC</span>
+            </header>
+            <p class="log-summary">{{ row.summary }}</p>
+            <hr class="divider" />
+            <details>
+              <summary>View full payload</summary>
+              <pre><code>{{ row.message }}</code></pre>
+            </details>
+        </article>
+        {% else %}
+        <p>No syslog entries yet. Waiting for traffic from the gateway…</p>
+        {% endfor %}
     </div>
 </main>
 
