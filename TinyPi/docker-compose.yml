@@ -8,7 +8,8 @@ services:
     restart: unless-stopped
     environment:
       - SIEM_DB=/data/events.db
-      - SIEM_INTERFACE=eth0 
+      - SIEM_INTERFACE=eth0
+      - SIEM_SYSLOG_PORT=5514
       - SIEM_PORT=8000
       - PYTHONUNBUFFERED=1
     volumes:

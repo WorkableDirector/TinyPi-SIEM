@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 DB_PATH = os.environ.get("SIEM_DB", "/data/siem.db")
-UDP_PORT = 514
+UDP_PORT = int(os.environ.get("SIEM_SYSLOG_PORT", 5514))
 UNIFI_GATEWAY_IP = os.environ.get("UNIFI_GATEWAY_IP")
 UNIFI_GATEWAY_NAME = os.environ.get("UNIFI_GATEWAY_NAME", "unifi-gateway")
 WEB_PORT = int(os.environ.get("SIEM_PORT", 8000))

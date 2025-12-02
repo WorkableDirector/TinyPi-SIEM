@@ -40,7 +40,7 @@ sudo ufw allow 5514/udp
 sudo ufw reload
 ```
 
-This opens TCP port **8000** for the web dashboard and UDP port **5514** for syslog log collection.
+This opens TCP port **8000** for the web dashboard and UDP port **5514** for syslog log collection. The syslog listener binds to port **5514** by default; you can override it by setting the `SIEM_SYSLOG_PORT` environment variable if your gateway needs a different destination port.
 
 ### 3. Build and run the container
 ```bash
