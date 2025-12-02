@@ -55,9 +55,9 @@ Open your browser and go to:
 
 ## Features
 * Centralized log collection
-* Basic alert detection (e.g., failed SSH logins)
+* Basic alert detection (e.g., failed SSH logins) (WIP)
 * Real-time dashboard updates
-* Authentication and integrity verification
+* Authentication and integrity verification (WIP)
 
 
 
