@@ -58,12 +58,23 @@
 </head>
 <body>
 <main class="container">
+    <nav>
+      <ul><li><strong>TinyPi SIEM</strong></li></ul>
+      <ul>
+        <li><a href="/" class="contrast">Dashboard</a></li>
+        <li><a href="/logs" aria-current="page">Syslog</a></li>
+        <li><a href="/alerts">Alerts</a></li>
+        <li><a href="/rules">Rules</a></li>
+      </ul>
+    </nav>
+
     <div class="page-header">
         <div>
           <p class="subhead">Investigate UniFi Gateway syslog messages</p>
           <h2 style="margin:4px 0 0 0;">Syslog Log</h2>
         </div>
         <div class="utility-links">
+          <a href="/" role="button" class="outline secondary">Back to Dashboard</a>
           <a href="#top" role="button" class="outline secondary">Back to top</a>
           <a href="/alerts" role="button" class="outline secondary">Go to Alerts</a>
         </div>
