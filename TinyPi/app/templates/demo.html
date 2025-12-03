@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Demo Data • TinyPi SIEM</title>
+  <link rel="stylesheet" href="/static/theme.css">
+</head>
+<body>
+<main class="container">
+  <nav>
+    <ul><li><strong>TinyPi SIEM</strong></li></ul>
+    <ul>
+      <li><a href="/">Dashboard</a></li>
+      <li><a href="/logs">Logs</a></li>
+      <li><a href="/alerts">Alerts</a></li>
+      <li><a href="/rules">Rules</a></li>
+      <li><a href="/demo" aria-current="page">Demo</a></li>
+    </ul>
+  </nav>
+
+  <header class="page-header">
+    <div>
+      <p class="section-title">Demo controls</p>
+      <h1 class="section-heading">Populate the UI with sample data</h1>
+      <p class="tagline">Generate alerts and logs to explore the dashboards without attaching a live UniFi gateway. Clearing data here resets the counts across the app.</p>
+    </div>
+    <div class="controls">
+      <a href="/" role="button" class="secondary">Back to dashboard</a>
+    </div>
+  </header>
+
+  <section class="grid cards" aria-label="Demo actions">
+    <article class="card">
+      <h3>Demo data actions</h3>
+      <p class="tagline">Use these controls to seed or reset the database. Actions apply instantly across dashboard, logs, and alerts.</p>
+      <div class="controls" style="margin-top:12px;">
+        <button id="demo-seed" class="primary">Generate demo alerts</button>
+        <button id="reset-all" class="secondary">Clear demo data</button>
+      </div>
+      <p id="status" class="status-text" aria-live="polite"></p>
+    </article>
+
+    <article class="card">
+      <h3>What gets created</h3>
+      <ul class="bullet-list">
+        <li>Sample syslog entries that mirror UniFi gateway traffic</li>
+        <li>Detection alerts across multiple severities</li>
+        <li>Trend and distribution data for charts and feeds</li>
+      </ul>
+      <p class="tagline">Need a clean slate? Use the clear action to remove all demo events and alerts.</p>
+    </article>
+  </section>
+</main>
+
+<script>
+  const statusText = document.getElementById('status');
+
+  function setStatus(message, tone = 'muted') {
+    statusText.textContent = message;
+    statusText.dataset.tone = tone;
+  }
+
+  async function postJSON(url) {
+    const res = await fetch(url, { method: 'POST' });
+    if (!res.ok) throw new Error(`Request to ${url} failed`);
+    return res.json();
+  }
+
+  document.getElementById('demo-seed').addEventListener('click', async () => {
+    const btn = document.getElementById('demo-seed');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    setStatus('Generating alerts and log samples…', 'muted');
+    try {
+      const result = await postJSON('/demo/seed');
+      setStatus(`Added ${result.events_inserted} events and ${result.alerts_inserted} alerts.`, 'success');
+    } catch (e) {
+      console.error(e);
+      setStatus('Unable to generate demo data. Check server logs.', 'danger');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Generate demo alerts';
+    }
+  });
+
+  document.getElementById('reset-all').addEventListener('click', async () => {
+    if (!confirm('This will clear all events and alerts. Continue?')) return;
+    try {
+      await postJSON('/reset/all');
+      setStatus('Demo data cleared. Dashboard feeds will show as empty until you seed again.', 'muted');
+    } catch (e) {
+      console.error(e);
+      setStatus('Unable to clear data. Please try again.', 'danger');
+    }
+  });
+</script>
+</body>
+</html>

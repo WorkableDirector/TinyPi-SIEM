@@ -281,6 +281,11 @@ def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+@app.get("/demo", response_class=HTMLResponse)
+def demo(request: Request):
+    return templates.TemplateResponse("demo.html", {"request": request})
+
+
 @app.get("/logs", response_class=HTMLResponse)
 def view_logs(
     request: Request,
