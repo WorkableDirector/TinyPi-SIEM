@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Rules Manager • TinyPi SIEM</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard • TinyPi SIEM</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <style>
     :root {
@@ -12,11 +13,33 @@
       --pico-primary: #5eead4;
     }
     body { background: #0b1324; color: #e2e8f0; padding: 24px; }
-    main { max-width: 1000px; margin: 0 auto; }
+    main { max-width: 1100px; margin: 0 auto; }
     nav ul:first-child strong { color: #5eead4; }
-    article, table { background: var(--pico-card-background-color); border-radius: 12px; box-shadow: 0 15px 35px rgba(0,0,0,0.35); }
-    table thead { background: rgba(148, 163, 184, 0.08); }
-    code { color: #cbd5e1; }
+    .grid { display: grid; gap: 16px; }
+    .cards { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .card {
+      background: var(--pico-card-background-color);
+      border-radius: 14px;
+      padding: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    }
+    .card h3 { margin: 0 0 6px 0; }
+    .card small { color:#94a3b8; }
+    .pill { padding: 4px 10px; border-radius: 999px; font-weight: 700; font-size: 0.75em; }
+    .pill.host { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.15); }
+    .pill.app { background: rgba(96, 165, 250, 0.15); color: #93c5fd; border: 1px solid rgba(96, 165, 250, 0.2); }
+    .feed-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+    .feed-item { background: var(--pico-card-background-color); border-radius: 12px; padding: 12px 14px; border: 1px solid rgba(148,163,184,0.12); }
+    .feed-item header { display:flex; justify-content: space-between; gap: 10px; align-items:center; }
+    .badge { padding: 4px 10px; border-radius: 999px; font-size: 0.75em; font-weight: 700; letter-spacing: 0.3px; }
+    .sev-critical { background: #f472b6; color: #0b1324; }
+    .sev-high { background: #fb7185; color: #0b1324; }
+    .sev-medium { background: #fb923c; color: #0b1324; }
+    .sev-low { background: #60a5fa; color: #0b1324; }
+    .chart-bar { height: 10px; border-radius: 999px; background: rgba(148, 163, 184, 0.18); overflow: hidden; }
+    .chart-fill { height: 100%; background: linear-gradient(90deg, #5eead4, #93c5fd); width: 0%; transition: width 0.4s ease; }
+    .empty { color:#94a3b8; margin: 0; }
   </style>
 </head>
 <body>
@@ -24,43 +47,152 @@
   <nav>
     <ul><li><strong>TinyPi SIEM</strong></li></ul>
     <ul>
-      <li><a href="/">Dashboard</a></li>
+      <li><a href="/" class="contrast" aria-current="page">Dashboard</a></li>
       <li><a href="/logs">Logs</a></li>
       <li><a href="/alerts">Alerts</a></li>
-      <li><a href="/rules" class="contrast">Rules</a></li>
+      <li><a href="/rules">Rules</a></li>
     </ul>
   </nav>
 
-  <h2>Detection Rules</h2>
-  <p>Configure what the system should flag as suspicious from the UniFi Gateway syslog feed.</p>
+  <header style="margin: 10px 0 18px 0;">
+    <p style="margin:0; color:#94a3b8;">Overview</p>
+    <h2 style="margin:4px 0 0 0;">Dashboard</h2>
+    <p style="color:#cbd5e1; max-width: 720px;">A quick glance at syslog activity and triggered detections from your UniFi gateway.</p>
+  </header>
 
-  <article>
-    <header><strong>Add Custom Rule</strong></header>
-    <form action="/rules/add" method="POST" class="grid">
-      <input type="text" name="name" placeholder="Rule Name (e.g. Nmap Scan)" required>
-      <select name="severity">
-        <option value="medium">Medium</option>
-        <option value="high">High</option>
-        <option value="critical">Critical</option>
-      </select>
-      <input type="text" name="pattern" placeholder="Regex Pattern (e.g. 'nmap')" required>
-      <button type="submit">Save Rule</button>
-    </form>
-  </article>
+  <section class="grid cards" aria-label="Key metrics">
+    <article class="card">
+      <h3>Total Syslog Events</h3>
+      <p id="events-count" style="font-size:2.2em; margin:4px 0 2px 0;">—</p>
+      <small>Count of collected syslog entries</small>
+    </article>
+    <article class="card">
+      <h3>Total Alerts</h3>
+      <p id="alerts-count" style="font-size:2.2em; margin:4px 0 2px 0;">—</p>
+      <small>Rules triggered across all logs</small>
+    </article>
+    <article class="card">
+      <h3>Severity Mix</h3>
+      <div id="severity-chart" class="grid" style="gap:8px;"></div>
+      <small>Distribution of alert severities</small>
+    </article>
+  </section>
 
-  <table>
-    <thead><tr><th>Name</th><th>Severity</th><th>Regex Pattern</th><th>Action</th></tr></thead>
-    <tbody>
-      {% for r in rows %}
-      <tr>
-        <td><strong>{{ r.name }}</strong></td>
-        <td>{{ r.severity }}</td>
-        <td><code>{{ r.pattern }}</code></td>
-        <td><a href="/rules/delete/{{ r.id }}" role="button" class="outline secondary" style="padding:2px 10px; font-size:0.8em;">Delete</a></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="grid" style="margin-top:24px; gap:24px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
+    <section>
+      <header style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;">
+        <div>
+          <p style="margin:0; color:#94a3b8;">Most recent alerts</p>
+          <h3 style="margin:4px 0 0 0;">Alerts Feed</h3>
+        </div>
+        <a href="/alerts" role="button" class="outline secondary">View all</a>
+      </header>
+      <ul id="alerts-feed" class="feed-list" aria-live="polite"></ul>
+    </section>
+
+    <section>
+      <header style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;">
+        <div>
+          <p style="margin:0; color:#94a3b8;">Freshest syslog entries</p>
+          <h3 style="margin:4px 0 0 0;">Live Log Feed</h3>
+        </div>
+        <a href="/logs" role="button" class="outline secondary">Explore logs</a>
+      </header>
+      <ul id="logs-feed" class="feed-list" aria-live="polite"></ul>
+    </section>
+  </div>
 </main>
+
+<script>
+  async function loadStats() {
+    try {
+      const res = await fetch('/api/stats');
+      if (!res.ok) throw new Error('Failed to load stats');
+      const data = await res.json();
+
+      document.getElementById('events-count').textContent = data.counts.events.toLocaleString();
+      document.getElementById('alerts-count').textContent = data.counts.alerts.toLocaleString();
+
+      renderSeverity(data.charts.severity || []);
+      renderAlerts(data.feed.alerts || []);
+      renderLogs(data.feed.logs || []);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function renderSeverity(rows) {
+    const container = document.getElementById('severity-chart');
+    container.innerHTML = '';
+
+    if (!rows.length) {
+      container.innerHTML = '<p class="empty">No alert data yet.</p>';
+      return;
+    }
+
+    const total = rows.reduce((acc, row) => acc + (row.c || 0), 0) || 1;
+    rows.forEach(row => {
+      const percent = Math.round(((row.c || 0) / total) * 100);
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.9em;">
+          <strong style="text-transform:capitalize;">${row.severity}</strong>
+          <span>${row.c} · ${percent}%</span>
+        </div>
+        <div class="chart-bar"><div class="chart-fill" style="width:${percent}%"></div></div>
+      `;
+      container.appendChild(wrapper);
+    });
+  }
+
+  function renderAlerts(rows) {
+    const feed = document.getElementById('alerts-feed');
+    feed.innerHTML = '';
+    if (!rows.length) {
+      feed.innerHTML = '<p class="empty">No alerts yet.</p>';
+      return;
+    }
+
+    rows.forEach(row => {
+      const li = document.createElement('li');
+      li.className = 'feed-item';
+      li.innerHTML = `
+        <header>
+          <span class="badge sev-${row.severity}">${row.severity}</span>
+          <small>${row.ts}</small>
+        </header>
+        <p style="margin:6px 0 0 0; color:#e2e8f0;">${row.description}</p>
+      `;
+      feed.appendChild(li);
+    });
+  }
+
+  function renderLogs(rows) {
+    const feed = document.getElementById('logs-feed');
+    feed.innerHTML = '';
+    if (!rows.length) {
+      feed.innerHTML = '<p class="empty">No syslog entries yet.</p>';
+      return;
+    }
+
+    rows.forEach(row => {
+      const li = document.createElement('li');
+      li.className = 'feed-item';
+      li.innerHTML = `
+        <header>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            ${row.host ? `<span class="pill host">${row.host}</span>` : ''}
+            ${row.app ? `<span class="pill app">${row.app}</span>` : ''}
+          </div>
+          <small>${row.ts || ''}</small>
+        </header>
+        <p style="margin:6px 0 0 0; color:#e2e8f0;">${row.summary}</p>
+      `;
+      feed.appendChild(li);
+    });
+  }
+
+  loadStats();
+</script>
 </body>
 </html>
