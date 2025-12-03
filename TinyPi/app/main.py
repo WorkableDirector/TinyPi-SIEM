@@ -32,6 +32,10 @@ def dict_factory(cursor, row):
     return d
 
 def db() -> sqlite3.Connection:
+    db_dir = os.path.dirname(DB_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = dict_factory
     return conn
