@@ -19,38 +19,15 @@
     </ul>
   </nav>
 
-  <header class="page-header">
+  <header class="page-header compact">
     <div>
       <p class="section-title">Dashboard</p>
-      <h1 class="section-heading">Security posture at a glance</h1>
-      <p class="tagline">Key metrics, latest alerts, and recent log volume all in one responsive view. Resize the window to see panels reflow smoothly.</p>
-    </div>
-    <div class="controls">
-      <a href="/demo" role="button" class="secondary">Demo data</a>
-      <a href="/alerts" role="button" class="secondary">Open alerts</a>
-      <a href="/logs" role="button" class="secondary">Explore logs</a>
+      <h1 class="section-heading">Alerts, logs, and charts at a glance</h1>
+      <p class="tagline">A focused landing view that keeps detections, live log entries, and signal trends front and center.</p>
     </div>
   </header>
 
-  <section class="grid cards" aria-label="Key metrics">
-    <article class="card">
-      <h3>Total Syslog Events</h3>
-      <p id="events-count" class="metric">—</p>
-      <small>Raw messages collected and parsed</small>
-    </article>
-    <article class="card">
-      <h3>Total Alerts</h3>
-      <p id="alerts-count" class="metric">—</p>
-      <small>Detections generated from rules</small>
-    </article>
-    <article class="card">
-      <h3>Severity Mix</h3>
-      <div id="severity-chart" class="chart-stack"></div>
-      <small>Alert distribution by severity</small>
-    </article>
-  </section>
-
-  <section class="panel-grid" aria-label="Recent activity">
+  <section class="panel-grid" aria-label="Activity feeds">
     <article class="panel">
       <header class="panel-header">
         <div>
@@ -72,6 +49,18 @@
       </header>
       <ul id="logs-feed" class="feed-list" aria-live="polite"></ul>
     </article>
+  </section>
+
+  <section class="panel-grid charts" aria-label="Charts">
+    <article class="panel">
+      <header class="panel-header">
+        <div>
+          <p class="section-title">Alert mix</p>
+          <h3 class="section-heading">Severity breakdown</h3>
+        </div>
+      </header>
+      <div id="severity-chart" class="chart-stack"></div>
+    </article>
 
     <article class="panel wide">
       <header class="panel-header">
@@ -91,9 +80,6 @@
       const res = await fetch('/api/stats');
       if (!res.ok) throw new Error('Failed to load stats');
       const data = await res.json();
-
-      document.getElementById('events-count').textContent = data.counts.events.toLocaleString();
-      document.getElementById('alerts-count').textContent = data.counts.alerts.toLocaleString();
 
       renderSeverity(data.charts.severity || []);
       renderTrend(data.charts.trend || {});
