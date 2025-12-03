@@ -25,6 +25,7 @@
     <div class="controls" style="margin-top:10px;">
       <a href="/" role="button" class="secondary">Back to Dashboard</a>
       <a href="/logs" role="button" class="secondary">View raw logs</a>
+      <button id="demo-seed" class="primary" type="button">Generate demo alerts</button>
     </div>
   </section>
 
@@ -93,6 +94,21 @@
 
   document.getElementById('refresh-alerts').addEventListener('click', function() {
     window.location.href = window.location.pathname + window.location.search;
+  });
+
+  const demoBtn = document.getElementById('demo-seed');
+  demoBtn?.addEventListener('click', async function() {
+    demoBtn.disabled = true;
+    demoBtn.textContent = 'Generating…';
+    try {
+      await fetch('/demo/seed', { method: 'POST' });
+      window.location.href = window.location.pathname + window.location.search;
+    } catch (e) {
+      alert('Unable to generate demo alerts.');
+    } finally {
+      demoBtn.disabled = false;
+      demoBtn.textContent = 'Generate demo alerts';
+    }
   });
 </script>
 </body>

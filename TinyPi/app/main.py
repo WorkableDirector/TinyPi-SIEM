@@ -3,7 +3,7 @@ import datetime as dt
 import os
 import re
 import sqlite3
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -18,6 +18,13 @@ WEB_PORT = int(os.environ.get("SIEM_PORT", 8000))
 DEFAULT_RULES = [
     ("ssh_brute", "syslog", "SSH Brute Force", "medium", "(Failed password|Invalid user|error: PAM: Authentication failure)"),
     ("sudo_abuse", "syslog", "Sudo Auth Failure", "medium", "authentication failure"),
+]
+
+DEMO_RULES: List[Tuple[str, str, str, str, str]] = [
+    ("ssh_brute_high", "syslog", "SSH Brute Force", "high", "Failed password for"),
+    ("sudo_abuse_demo", "syslog", "Sudo Auth Failure", "medium", "authentication failure"),
+    ("ufw_block", "syslog", "Firewall Block", "low", "UFW BLOCK"),
+    ("beacon", "syslog", "C2 Beacon Detected", "critical", "beacon"),
 ]
 
 app = FastAPI(title="TinyPi SIEM", version="3.0")
@@ -88,10 +95,24 @@ def init_db():
     conn.commit()
     conn.close()
 
-def insert_event(evt_type: str, src: str, dst: str, payload: str) -> tuple[int, str]:
+
+def ensure_rules_exist(rules: List[Tuple[str, str, str, str, str]]):
     conn = db()
     cur = conn.cursor()
-    ts = dt.datetime.utcnow().isoformat(timespec="seconds")
+    for rule in rules:
+        existing = cur.execute("SELECT 1 FROM rules WHERE rule_id = ?", (rule[0],)).fetchone()
+        if not existing:
+            cur.execute(
+                "INSERT INTO rules (rule_id, source, name, severity, pattern) VALUES (?,?,?,?,?)",
+                rule,
+            )
+    conn.commit()
+    conn.close()
+
+def insert_event(evt_type: str, src: str, dst: str, payload: str, ts: str | None = None) -> tuple[int, str]:
+    conn = db()
+    cur = conn.cursor()
+    ts = ts or dt.datetime.utcnow().isoformat(timespec="seconds")
     cur.execute(
         "INSERT INTO events(ts, type, src, dst, payload) VALUES(?,?,?,?,?)",
         (ts, evt_type, src, dst, payload)
@@ -155,6 +176,72 @@ def parse_syslog_payload(payload: str) -> Dict[str, Any]:
         "app": groups.get("app") or "syslog",
         "message": message or payload,
         "host": groups.get("host"),
+    }
+
+
+def seed_demo_data():
+    """Insert sample events and alerts to demo the UI without live traffic."""
+
+    ensure_rules_exist(DEMO_RULES)
+
+    sample_payloads: List[Tuple[str, str, str, str]] = [
+        (
+            "unifi-gateway",
+            "syslog",
+            "<165>Oct 30 10:00:01 unifi-gateway sshd[2010]: Failed password for invalid user admin from 10.0.0.25 port 54882 ssh2",
+            "2024-10-30T10:00:01",
+        ),
+        (
+            "unifi-gateway",
+            "syslog",
+            "<165>Oct 30 09:55:42 unifi-gateway sshd[2007]: Failed password for root from 10.0.0.50 port 54411 ssh2",
+            "2024-10-30T09:55:42",
+        ),
+        (
+            "unifi-gateway",
+            "syslog",
+            "<170>Oct 30 08:22:01 unifi-gateway sudo: pam_unix(sudo:auth): authentication failure; logname= uid=0 euid=0 tty=/dev/pts/0 user=pi",
+            "2024-10-30T08:22:01",
+        ),
+        (
+            "unifi-gateway",
+            "syslog",
+            "<134>Oct 30 07:44:10 unifi-gateway kernel: [UFW BLOCK] IN=eth0 OUT= MAC=aa:bb:cc SRC=203.0.113.4 DST=192.168.1.10 LEN=60",
+            "2024-10-30T07:44:10",
+        ),
+        (
+            "unifi-gateway",
+            "syslog",
+            "<134>Oct 30 06:05:10 unifi-gateway ids[8181]: outbound beacon pattern matched on host 192.168.1.44",
+            "2024-10-30T06:05:10",
+        ),
+        (
+            "unifi-gateway",
+            "syslog",
+            "<134>Oct 30 05:42:10 unifi-gateway dhcpd[2222]: DHCPREQUEST for 192.168.1.20",
+            "2024-10-30T05:42:10",
+        ),
+    ]
+
+    conn = db()
+    cur = conn.cursor()
+    alerts_before = cur.execute("SELECT COUNT(*) c FROM alerts").fetchone()["c"]
+    conn.close()
+
+    for src, dst, payload, ts in sample_payloads:
+        eid, event_ts = insert_event("syslog", src, dst, payload, ts)
+        analyze_payload(eid, event_ts, "syslog", payload)
+
+    conn = db()
+    cur = conn.cursor()
+    alerts_after = cur.execute("SELECT COUNT(*) c FROM alerts").fetchone()["c"]
+    events_total = cur.execute("SELECT COUNT(*) c FROM events WHERE type='syslog'").fetchone()["c"]
+    conn.close()
+
+    return {
+        "events_total": events_total,
+        "alerts_created": alerts_after - alerts_before,
+        "alerts_total": alerts_after,
     }
 
 # Syslog (UDP)
@@ -308,6 +395,12 @@ def clear_all():
     conn.close()
     return JSONResponse({"status": "ok", "cleared": "all"})
 
+
+@app.post("/demo/seed")
+def demo_seed():
+    summary = seed_demo_data()
+    return JSONResponse({"status": "ok", **summary})
+
 # -- Rules Management --
 @app.get("/rules", response_class=HTMLResponse)
 def view_rules(request: Request):
@@ -353,7 +446,17 @@ def get_stats():
             "events": cur.execute("SELECT COUNT(*) c FROM events WHERE type = 'syslog'").fetchone()['c'],
             "alerts": cur.execute("SELECT COUNT(*) c FROM alerts").fetchone()['c']
         },
-        "charts": {"severity": cur.execute("SELECT severity, COUNT(*) c FROM alerts GROUP BY severity").fetchall()},
+        "charts": {
+            "severity": cur.execute("SELECT severity, COUNT(*) c FROM alerts GROUP BY severity").fetchall(),
+            "trend": {
+                "alerts": cur.execute(
+                    "SELECT substr(ts, 1, 13) AS hour, COUNT(*) c FROM alerts GROUP BY hour ORDER BY hour DESC LIMIT 12"
+                ).fetchall(),
+                "events": cur.execute(
+                    "SELECT substr(ts, 1, 13) AS hour, COUNT(*) c FROM events WHERE type='syslog' GROUP BY hour ORDER BY hour DESC LIMIT 12"
+                ).fetchall(),
+            }
+        },
         "feed": {
             "alerts": cur.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 5").fetchall(),
             "logs": [

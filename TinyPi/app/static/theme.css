@@ -86,6 +86,19 @@ nav strong { color: var(--accent); font-size: 1.1em; }
 
 .chart-bar { height: 10px; border-radius: 999px; background: rgba(148, 163, 184, 0.18); overflow: hidden; }
 .chart-fill { height: 100%; background: linear-gradient(90deg, #5eead4, #93c5fd); width: 0%; transition: width 0.4s ease; }
+.chart-fill.alerts { background: linear-gradient(90deg, #fb7185, #f472b6); }
+.chart-fill.events { background: linear-gradient(90deg, #5eead4, #93c5fd); }
+
+.chart-grid { display: grid; gap: 12px; }
+.trend-row { background: var(--panel); border: 1px solid var(--border); padding: 12px 14px; border-radius: var(--radius); box-shadow: var(--shadow); display: grid; grid-template-columns: 180px 1fr auto; gap: 12px; align-items: center; }
+.trend-hour { color: var(--muted); font-weight: 700; }
+.trend-bars { display: grid; gap: 8px; }
+.trend-counts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+
+@media (max-width: 720px) {
+  .trend-row { grid-template-columns: 1fr; }
+  .trend-counts { justify-content: flex-start; }
+}
 
 .filters {
   display: grid;
