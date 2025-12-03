@@ -30,6 +30,8 @@ body {
 main.container {
   width: min(1200px, 96vw);
   margin: 0 auto;
+  display: grid;
+  gap: 18px;
 }
 
 nav {
@@ -79,6 +81,7 @@ nav strong { color: var(--accent); font-size: 1.1em; }
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  align-items: start;
 }
 
 .panel-grid.charts {
@@ -102,6 +105,10 @@ nav strong { color: var(--accent); font-size: 1.1em; }
   border: 1px solid var(--border);
   padding: 14px 16px;
   box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
 }
 
 .panel.wide { grid-column: 1 / -1; }
@@ -112,7 +119,6 @@ nav strong { color: var(--accent); font-size: 1.1em; }
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
-  margin-bottom: 10px;
 }
 
 .metric {
