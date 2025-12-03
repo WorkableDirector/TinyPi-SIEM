@@ -15,71 +15,74 @@
       <li><a href="/logs">Logs</a></li>
       <li><a href="/alerts">Alerts</a></li>
       <li><a href="/rules">Rules</a></li>
+      <li><a href="/demo">Demo</a></li>
     </ul>
   </nav>
 
-  <section class="hero" aria-label="Overview">
-    <p class="section-title">Security Overview</p>
-    <h2 class="section-heading">Unified visibility for logs and alerts</h2>
-    <p class="tagline">Track live syslog activity from your UniFi gateway while keeping triggered alerts clearly separated for incident response. Each panel below updates from the same data pipeline.</p>
-    <div class="controls" style="margin-top:12px;">
-      <button id="demo-seed" class="primary">Generate demo alerts</button>
-      <button id="reset-all" class="secondary">Clear demo data</button>
-      <a href="/alerts" role="button" class="secondary">View alerts</a>
+  <header class="page-header">
+    <div>
+      <p class="section-title">Dashboard</p>
+      <h1 class="section-heading">Security posture at a glance</h1>
+      <p class="tagline">Key metrics, latest alerts, and recent log volume all in one responsive view. Resize the window to see panels reflow smoothly.</p>
     </div>
-  </section>
+    <div class="controls">
+      <a href="/demo" role="button" class="secondary">Demo data</a>
+      <a href="/alerts" role="button" class="secondary">Open alerts</a>
+      <a href="/logs" role="button" class="secondary">Explore logs</a>
+    </div>
+  </header>
 
   <section class="grid cards" aria-label="Key metrics">
     <article class="card">
       <h3>Total Syslog Events</h3>
-      <p id="events-count" style="font-size:2.4em; margin:6px 0 4px 0;">—</p>
+      <p id="events-count" class="metric">—</p>
       <small>Raw messages collected and parsed</small>
     </article>
     <article class="card">
       <h3>Total Alerts</h3>
-      <p id="alerts-count" style="font-size:2.4em; margin:6px 0 4px 0;">—</p>
+      <p id="alerts-count" class="metric">—</p>
       <small>Detections generated from rules</small>
     </article>
     <article class="card">
       <h3>Severity Mix</h3>
-      <div id="severity-chart" class="grid" style="gap:8px;"></div>
+      <div id="severity-chart" class="chart-stack"></div>
       <small>Alert distribution by severity</small>
     </article>
   </section>
 
-  <div class="grid" style="margin-top:24px; gap:20px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));">
-    <section>
-      <header style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;">
+  <section class="panel-grid" aria-label="Recent activity">
+    <article class="panel">
+      <header class="panel-header">
         <div>
           <p class="section-title">Triggered detections</p>
-          <h3 class="section-heading" style="margin:4px 0 0 0;">Alerts feed</h3>
+          <h3 class="section-heading">Alerts feed</h3>
         </div>
         <a href="/alerts" role="button" class="secondary">View all</a>
       </header>
       <ul id="alerts-feed" class="feed-list" aria-live="polite"></ul>
-    </section>
+    </article>
 
-    <section>
-      <header style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;">
+    <article class="panel">
+      <header class="panel-header">
         <div>
           <p class="section-title">Freshest syslog entries</p>
-          <h3 class="section-heading" style="margin:4px 0 0 0;">Live log feed</h3>
+          <h3 class="section-heading">Live log feed</h3>
         </div>
         <a href="/logs" role="button" class="secondary">Explore logs</a>
       </header>
       <ul id="logs-feed" class="feed-list" aria-live="polite"></ul>
-    </section>
-  
-    <section>
-      <header style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;">
+    </article>
+
+    <article class="panel wide">
+      <header class="panel-header">
         <div>
           <p class="section-title">Recent activity</p>
-          <h3 class="section-heading" style="margin:4px 0 0 0;">Alerts vs syslog (last 12 hours)</h3>
+          <h3 class="section-heading">Alerts vs syslog (last 12 hours)</h3>
         </div>
       </header>
       <div id="trend-chart" class="chart-grid"></div>
-    </section>
-  </div>
+    </article>
+  </section>
 </main>
 
 <script>
@@ -114,9 +117,10 @@
     rows.forEach(row => {
       const percent = Math.round(((row.c || 0) / total) * 100);
       const wrapper = document.createElement('div');
+      wrapper.className = 'chart-row';
       wrapper.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.95em;">
-          <strong style="text-transform:capitalize;">${row.severity}</strong>
+        <div class="chart-row-header">
+          <strong>${row.severity}</strong>
           <span>${row.c} · ${percent}%</span>
         </div>
         <div class="chart-bar"><div class="chart-fill" style="width:${percent}%"></div></div>
@@ -141,7 +145,7 @@
           <span class="badge sev-${row.severity}">${row.severity}</span>
           <small>${row.ts}</small>
         </header>
-        <p style="margin:6px 0 0 0; color:#e2e8f0;">${row.description}</p>
+        <p class="feed-body">${row.description}</p>
       `;
       feed.appendChild(li);
     });
@@ -206,54 +210,17 @@
       li.className = 'feed-item';
       li.innerHTML = `
         <header>
-          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <div class="pill-row">
             ${row.host ? `<span class="pill host">${row.host}</span>` : ''}
             ${row.app ? `<span class="pill app">${row.app}</span>` : ''}
           </div>
           <small>${row.ts || ''}</small>
         </header>
-        <p style="margin:6px 0 0 0; color:#e2e8f0;">${row.summary}</p>
+        <p class="feed-body">${row.summary}</p>
       `;
       feed.appendChild(li);
     });
   }
-
-  async function postJSON(url) {
-    const res = await fetch(url, { method: 'POST' });
-    if (!res.ok) throw new Error(`Request to ${url} failed`);
-    return res.json();
-  }
-
-  document.getElementById('demo-seed').addEventListener('click', async () => {
-    const btn = document.getElementById('demo-seed');
-    btn.disabled = true;
-    btn.textContent = 'Generating…';
-    try {
-      await postJSON('/demo/seed');
-      await loadStats();
-    } catch (e) {
-      console.error(e);
-      alert('Unable to generate demo data. Check server logs.');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Generate demo alerts';
-    }
-  });
-
-  document.getElementById('reset-all').addEventListener('click', async () => {
-    if (!confirm('This will clear all events and alerts. Continue?')) return;
-    try {
-      await postJSON('/reset/all');
-      await loadStats();
-      document.getElementById('alerts-feed').innerHTML = '<p class="empty">No alerts yet.</p>';
-      document.getElementById('logs-feed').innerHTML = '<p class="empty">No syslog entries yet.</p>';
-      document.getElementById('severity-chart').innerHTML = '<p class="empty">No alert data yet.</p>';
-      document.getElementById('trend-chart').innerHTML = '<p class="empty">No data yet. Generate demo alerts to populate charts.</p>';
-    } catch (e) {
-      console.error(e);
-      alert('Unable to clear data.');
-    }
-  });
 
   loadStats();
 </script>
