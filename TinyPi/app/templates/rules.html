@@ -3,21 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <title>Rules Manager • TinyPi SIEM</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-  <style>
-    :root {
-      --pico-background-color: #0b1324;
-      --pico-card-background-color: #101b32;
-      --pico-form-element-background-color: #0f172a;
-      --pico-primary: #5eead4;
-    }
-    body { background: #0b1324; color: #e2e8f0; padding: 24px; }
-    main { max-width: 1000px; margin: 0 auto; }
-    nav ul:first-child strong { color: #5eead4; }
-    article, table { background: var(--pico-card-background-color); border-radius: 12px; box-shadow: 0 15px 35px rgba(0,0,0,0.35); }
-    table thead { background: rgba(148, 163, 184, 0.08); }
-    code { color: #cbd5e1; }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/static/theme.css">
 </head>
 <body>
 <main class="container">
@@ -27,40 +14,65 @@
       <li><a href="/">Dashboard</a></li>
       <li><a href="/logs">Logs</a></li>
       <li><a href="/alerts">Alerts</a></li>
-      <li><a href="/rules" class="contrast">Rules</a></li>
+      <li><a href="/rules" aria-current="page">Rules</a></li>
     </ul>
   </nav>
 
-  <h2>Detection Rules</h2>
-  <p>Configure what the system should flag as suspicious from the UniFi Gateway syslog feed.</p>
+  <section class="hero">
+    <p class="section-title">Detection logic</p>
+    <h2 class="section-heading">Tune the alerts independently from logs</h2>
+    <p class="tagline">Rules inspect incoming syslog traffic and emit alerts without mutating the stored raw events. Adjust the regex patterns and severities to refine what triggers notifications.</p>
+  </section>
 
-  <article>
-    <header><strong>Add Custom Rule</strong></header>
-    <form action="/rules/add" method="POST" class="grid">
-      <input type="text" name="name" placeholder="Rule Name (e.g. Nmap Scan)" required>
-      <select name="severity">
-        <option value="medium">Medium</option>
-        <option value="high">High</option>
-        <option value="critical">Critical</option>
-      </select>
-      <input type="text" name="pattern" placeholder="Regex Pattern (e.g. 'nmap')" required>
-      <button type="submit">Save Rule</button>
+  <article class="card" style="margin-bottom:16px;">
+    <header style="display:flex; justify-content:space-between; align-items:center;">
+      <div>
+        <p class="section-title" style="margin:0;">Add custom rule</p>
+        <h3 style="margin:4px 0 0 0;">New detection</h3>
+      </div>
+    </header>
+    <form action="/rules/add" method="POST" class="filters" style="margin-top:12px; align-items:flex-end;">
+      <div>
+        <label for="name">Rule name</label>
+        <input id="name" type="text" name="name" placeholder="Nmap scan" required>
+      </div>
+      <div>
+        <label for="severity">Severity</label>
+        <select id="severity" name="severity">
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+          <option value="critical">Critical</option>
+        </select>
+      </div>
+      <div>
+        <label for="pattern">Regex pattern</label>
+        <input id="pattern" type="text" name="pattern" placeholder="nmap|scan|brute" required>
+      </div>
+      <div class="controls">
+        <button type="submit" class="primary">Save rule</button>
+        <a href="/rules" role="button" class="secondary">Reset</a>
+      </div>
     </form>
   </article>
 
-  <table>
-    <thead><tr><th>Name</th><th>Severity</th><th>Regex Pattern</th><th>Action</th></tr></thead>
-    <tbody>
-      {% for r in rows %}
-      <tr>
-        <td><strong>{{ r.name }}</strong></td>
-        <td>{{ r.severity }}</td>
-        <td><code>{{ r.pattern }}</code></td>
-        <td><a href="/rules/delete/{{ r.id }}" role="button" class="outline secondary" style="padding:2px 10px; font-size:0.8em;">Delete</a></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <article class="card table-card">
+    <table>
+      <thead><tr><th>Name</th><th>Severity</th><th>Regex Pattern</th><th>Action</th></tr></thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td><strong>{{ r.name }}</strong></td>
+          <td><span class="badge sev-{{ r.severity }}">{{ r.severity }}</span></td>
+          <td><code>{{ r.pattern }}</code></td>
+          <td><a href="/rules/delete/{{ r.id }}" role="button" class="secondary" style="padding:6px 12px;">Delete</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="empty">No rules configured.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
 </main>
 </body>
 </html>

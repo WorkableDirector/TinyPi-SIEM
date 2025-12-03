@@ -1,56 +1,82 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Alerts • TinyPi SIEM</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-  <style>
-    :root {
-      --pico-background-color: #0b1324;
-      --pico-card-background-color: #101b32;
-      --pico-form-element-background-color: #0f172a;
-      --pico-primary: #5eead4;
-    }
-    body { background: #0b1324; color: #e2e8f0; padding: 24px; }
-    main { max-width: 1100px; margin: 0 auto; }
-    code{white-space:pre-wrap; color: #cbd5e1;}
-    table thead { background: rgba(148, 163, 184, 0.08); }
-    table { background: var(--pico-card-background-color); border-radius: 12px; overflow: hidden; box-shadow: 0 15px 35px rgba(0,0,0,0.35); }
-    .badge { padding: 4px 10px; border-radius: 999px; font-size: 0.75em; font-weight: 700; letter-spacing: 0.3px; }
-    .sev-critical { background: #f472b6; color: #0b1324; }
-    .sev-high { background: #fb7185; color: #0b1324; }
-    .sev-medium { background: #fb923c; color: #0b1324; }
-    .sev-low { background: #60a5fa; color: #0b1324; }
-  </style>
+  <link rel="stylesheet" href="/static/theme.css">
 </head>
 <body>
 <main class="container">
-  <div style="display:flex; justify-content:space-between; align-items:center;">
-    <div>
-      <p style="margin:0; color:#94a3b8; font-size:0.9em;">Triggered detections</p>
-      <h2 style="margin:4px 0 0 0;">Alerts</h2>
+  <nav>
+    <ul><li><strong>TinyPi SIEM</strong></li></ul>
+    <ul>
+      <li><a href="/">Dashboard</a></li>
+      <li><a href="/logs">Logs</a></li>
+      <li><a href="/alerts" aria-current="page">Alerts</a></li>
+      <li><a href="/rules">Rules</a></li>
+    </ul>
+  </nav>
+
+  <section class="hero">
+    <p class="section-title">Triggered detections</p>
+    <h2 class="section-heading">Alerts are tracked separately from raw logs</h2>
+    <p class="tagline">Use the filters to focus on severities or keywords without touching the syslog archive. Clearing alerts here does not impact the underlying events.</p>
+    <div class="controls" style="margin-top:10px;">
+      <a href="/" role="button" class="secondary">Back to Dashboard</a>
+      <a href="/logs" role="button" class="secondary">View raw logs</a>
     </div>
-    <a href="/" role="button" class="outline">Back to Dashboard</a>
-  </div>
-  <div style="margin: 15px 0; display:flex; gap:10px;">
-    <button id="clear-alerts" class="outline secondary">Clear All Alerts</button>
-    <button id="refresh-alerts" class="outline">Refresh</button>
-  </div>
-  <table>
-    <thead><tr><th>ID</th><th>Time (UTC)</th><th>Severity</th><th>Description</th><th>Log ID</th></tr></thead>
-    <tbody>
-      {% for r in rows %}
-        <tr>
-          <td>{{ r['id'] }}</td>
-          <td>{{ r['ts'] }}</td>
-          <td><span class="badge sev-{{ r['severity'] }}">{{ r['severity'] }}</span></td>
-          <td><code>{{ r['description'] }}</code></td>
-          <td>{{ r['related_event_id'] or '' }}</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  </section>
+
+  <form class="filters" method="get" action="/alerts" style="align-items:flex-end;">
+    <div>
+      <label for="severity">Severity</label>
+      <select id="severity" name="severity">
+        <option value="" {% if not filters.severity %}selected{% endif %}>All severities</option>
+        <option value="critical" {% if filters.severity == 'critical' %}selected{% endif %}>Critical</option>
+        <option value="high" {% if filters.severity == 'high' %}selected{% endif %}>High</option>
+        <option value="medium" {% if filters.severity == 'medium' %}selected{% endif %}>Medium</option>
+        <option value="low" {% if filters.severity == 'low' %}selected{% endif %}>Low</option>
+      </select>
+    </div>
+    <div>
+      <label for="search">Description contains</label>
+      <input id="search" name="search" type="search" value="{{ filters.search }}" placeholder="ssh brute force" />
+    </div>
+    <div>
+      <label for="limit">Max rows</label>
+      <input id="limit" name="limit" type="number" min="10" max="500" value="{{ filters.limit }}" />
+    </div>
+    <div class="controls">
+      <button class="primary" type="submit">Apply filters</button>
+      <a href="/alerts" role="button" class="secondary">Reset</a>
+      <button id="refresh-alerts" class="secondary" type="button">Refresh</button>
+      <button id="clear-alerts" class="secondary" type="button">Clear All Alerts</button>
+    </div>
+  </form>
+
+  <small class="section-title">Showing {{ rows|length }} alert{{ 's' if rows|length != 1 else '' }} (limit {{ filters.limit }})</small>
+
+  <article class="card table-card" style="margin-top:12px;">
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Time (UTC)</th><th>Severity</th><th>Description</th><th>Log ID</th></tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            <td>{{ r['id'] }}</td>
+            <td>{{ r['ts'] }}</td>
+            <td><span class="badge sev-{{ r['severity'] }}">{{ r['severity'] }}</span></td>
+            <td><code>{{ r['description'] }}</code></td>
+            <td>{{ r['related_event_id'] or '' }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="empty">No alerts yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
 </main>
 
 <script>
@@ -66,7 +92,7 @@
   });
 
   document.getElementById('refresh-alerts').addEventListener('click', function() {
-    window.location.href = '/alerts';
+    window.location.href = window.location.pathname + window.location.search;
   });
 </script>
 </body>

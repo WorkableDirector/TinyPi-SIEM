@@ -251,11 +251,33 @@ def view_logs(
     )
 
 @app.get("/alerts", response_class=HTMLResponse)
-def view_alerts(request: Request):
+def view_alerts(request: Request, severity: str = "", search: str = "", limit: int = 200):
+    limit = max(10, min(limit, 500))
     conn = db()
-    rows = conn.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 200").fetchall()
+    params: list[Any] = []
+    sql = "SELECT * FROM alerts WHERE 1=1"
+
+    if severity:
+        sql += " AND severity = ?"
+        params.append(severity.lower())
+
+    if search:
+        sql += " AND description LIKE ?"
+        params.append(f"%{search}%")
+
+    sql += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+
+    rows = conn.execute(sql, params).fetchall()
     conn.close()
-    return templates.TemplateResponse("alerts.html", {"request": request, "rows": rows})
+    return templates.TemplateResponse(
+        "alerts.html",
+        {
+            "request": request,
+            "rows": rows,
+            "filters": {"severity": severity, "search": search, "limit": limit},
+        },
+    )
 
 
 # -- Data management --
