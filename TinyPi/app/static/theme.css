@@ -67,6 +67,11 @@ nav strong { color: var(--accent); font-size: 1.1em; }
   margin-bottom: 12px;
 }
 
+.page-header.compact {
+  margin-bottom: 10px;
+  padding: 4px 0 2px 0;
+}
+
 .grid { display: grid; gap: 16px; }
 .cards { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
 
@@ -74,6 +79,10 @@ nav strong { color: var(--accent); font-size: 1.1em; }
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+}
+
+.panel-grid.charts {
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
 }
 
 .card {
