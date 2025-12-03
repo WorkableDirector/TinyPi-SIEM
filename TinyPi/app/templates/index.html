@@ -22,6 +22,11 @@
     <p class="section-title">Security Overview</p>
     <h2 class="section-heading">Unified visibility for logs and alerts</h2>
     <p class="tagline">Track live syslog activity from your UniFi gateway while keeping triggered alerts clearly separated for incident response. Each panel below updates from the same data pipeline.</p>
+    <div class="controls" style="margin-top:12px;">
+      <button id="demo-seed" class="primary">Generate demo alerts</button>
+      <button id="reset-all" class="secondary">Clear demo data</button>
+      <a href="/alerts" role="button" class="secondary">View alerts</a>
+    </div>
   </section>
 
   <section class="grid cards" aria-label="Key metrics">
@@ -64,6 +69,16 @@
       </header>
       <ul id="logs-feed" class="feed-list" aria-live="polite"></ul>
     </section>
+  
+    <section>
+      <header style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;">
+        <div>
+          <p class="section-title">Recent activity</p>
+          <h3 class="section-heading" style="margin:4px 0 0 0;">Alerts vs syslog (last 12 hours)</h3>
+        </div>
+      </header>
+      <div id="trend-chart" class="chart-grid"></div>
+    </section>
   </div>
 </main>
 
@@ -78,6 +93,7 @@
       document.getElementById('alerts-count').textContent = data.counts.alerts.toLocaleString();
 
       renderSeverity(data.charts.severity || []);
+      renderTrend(data.charts.trend || {});
       renderAlerts(data.feed.alerts || []);
       renderLogs(data.feed.logs || []);
     } catch (e) {
@@ -131,6 +147,52 @@
     });
   }
 
+  function renderTrend(trend) {
+    const container = document.getElementById('trend-chart');
+    container.innerHTML = '';
+
+    const alerts = trend.alerts || [];
+    const events = trend.events || [];
+    const hourSet = new Set([
+      ...alerts.map((r) => r.hour),
+      ...events.map((r) => r.hour),
+    ].filter(Boolean));
+
+    if (!hourSet.size) {
+      container.innerHTML = '<p class="empty">No data yet. Generate demo alerts to populate charts.</p>';
+      return;
+    }
+
+    const hours = Array.from(hourSet).sort();
+    const alertMap = new Map(alerts.map((r) => [r.hour, r.c]));
+    const eventMap = new Map(events.map((r) => [r.hour, r.c]));
+
+    const maxVal = Math.max(
+      ...hours.map((h) => (alertMap.get(h) || 0)),
+      ...hours.map((h) => (eventMap.get(h) || 0)),
+      1,
+    );
+
+    hours.forEach((hour) => {
+      const alertVal = alertMap.get(hour) || 0;
+      const eventVal = eventMap.get(hour) || 0;
+      const row = document.createElement('div');
+      row.className = 'trend-row';
+      row.innerHTML = `
+        <div class="trend-hour">${hour.replace('T', ' ')} UTC</div>
+        <div class="trend-bars">
+          <div class="chart-bar"><div class="chart-fill alerts" style="width:${(alertVal / maxVal) * 100}%"></div></div>
+          <div class="chart-bar"><div class="chart-fill events" style="width:${(eventVal / maxVal) * 100}%"></div></div>
+        </div>
+        <div class="trend-counts">
+          <span class="pill app">${eventVal} logs</span>
+          <span class="pill host">${alertVal} alerts</span>
+        </div>
+      `;
+      container.appendChild(row);
+    });
+  }
+
   function renderLogs(rows) {
     const feed = document.getElementById('logs-feed');
     feed.innerHTML = '';
@@ -155,6 +217,43 @@
       feed.appendChild(li);
     });
   }
+
+  async function postJSON(url) {
+    const res = await fetch(url, { method: 'POST' });
+    if (!res.ok) throw new Error(`Request to ${url} failed`);
+    return res.json();
+  }
+
+  document.getElementById('demo-seed').addEventListener('click', async () => {
+    const btn = document.getElementById('demo-seed');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    try {
+      await postJSON('/demo/seed');
+      await loadStats();
+    } catch (e) {
+      console.error(e);
+      alert('Unable to generate demo data. Check server logs.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Generate demo alerts';
+    }
+  });
+
+  document.getElementById('reset-all').addEventListener('click', async () => {
+    if (!confirm('This will clear all events and alerts. Continue?')) return;
+    try {
+      await postJSON('/reset/all');
+      await loadStats();
+      document.getElementById('alerts-feed').innerHTML = '<p class="empty">No alerts yet.</p>';
+      document.getElementById('logs-feed').innerHTML = '<p class="empty">No syslog entries yet.</p>';
+      document.getElementById('severity-chart').innerHTML = '<p class="empty">No alert data yet.</p>';
+      document.getElementById('trend-chart').innerHTML = '<p class="empty">No data yet. Generate demo alerts to populate charts.</p>';
+    } catch (e) {
+      console.error(e);
+      alert('Unable to clear data.');
+    }
+  });
 
   loadStats();
 </script>
