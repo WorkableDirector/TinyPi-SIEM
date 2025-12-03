@@ -1,138 +1,86 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Syslog Explorer</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-  <style>
-      :root {
-        --pico-background-color: #0b1324;
-        --pico-card-background-color: #101b32;
-        --pico-form-element-background-color: #0f172a;
-        --pico-primary: #5eead4;
-      }
-      body {
-        padding: 24px;
-        background: radial-gradient(circle at 10% 20%, rgba(94, 234, 212, 0.05), transparent 30%), #0b1324;
-        color: #e2e8f0;
-      }
-      main {
-        max-width: 1200px;
-        margin: 0 auto;
-      }
-      code {
-        font-size: 0.9em;
-        word-break: break-word;
-        color: #cbd5e1;
-      }
-      .pill { padding: 4px 10px; border-radius: 999px; font-weight: 700; font-size: 0.75em; letter-spacing: 0.3px; }
-      .pill.app { background: rgba(96, 165, 250, 0.15); color: #93c5fd; border: 1px solid rgba(96, 165, 250, 0.2); }
-      .pill.host { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.15); }
-      .action-buttons { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-      .refresh-btn { padding: 10px 16px; font-size: 0.95em; min-height: 46px; display: inline-flex; align-items: center; justify-content: center; }
-      .action-buttons a[role="button"] { min-height: 46px; display: inline-flex; align-items: center; justify-content: center; }
-      .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px; }
-      .subhead { color:#94a3b8; margin: 0; }
-      .log-list { display: grid; gap: 12px; margin-top: 12px; }
-      .log-card {
-        background: var(--pico-card-background-color);
-        border-radius: 12px;
-        padding: 14px 16px;
-        border: 1px solid rgba(148, 163, 184, 0.1);
-        box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-      }
-      .log-card header {
-        display:flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 6px;
-      }
-      .log-meta { display:flex; gap:8px; align-items:center; flex-wrap: wrap; }
-      .log-time { color:#cbd5e1; font-size:0.9em; }
-      .log-summary { color:#e2e8f0; margin: 6px 0 10px 0; line-height:1.4; }
-      details summary { cursor: pointer; color:#93c5fd; }
-      details pre { background: rgba(15, 23, 42, 0.8); padding: 10px; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.1); }
-      .divider { height: 1px; background: rgba(148, 163, 184, 0.15); margin: 12px 0; border: none; }
-  </style>
+  <title>Syslog Explorer • TinyPi SIEM</title>
+  <link rel="stylesheet" href="/static/theme.css">
 </head>
 <body>
 <main class="container">
-    <nav>
-      <ul><li><strong>TinyPi SIEM</strong></li></ul>
-      <ul>
-        <li><a href="/" class="contrast">Dashboard</a></li>
-        <li><a href="/logs" aria-current="page">Syslog</a></li>
-        <li><a href="/alerts">Alerts</a></li>
-        <li><a href="/rules">Rules</a></li>
-      </ul>
-    </nav>
+  <nav>
+    <ul><li><strong>TinyPi SIEM</strong></li></ul>
+    <ul>
+      <li><a href="/">Dashboard</a></li>
+      <li><a href="/logs" aria-current="page">Logs</a></li>
+      <li><a href="/alerts">Alerts</a></li>
+      <li><a href="/rules">Rules</a></li>
+    </ul>
+  </nav>
 
-    <div class="page-header">
-        <div>
-          <p class="subhead">Investigate UniFi Gateway syslog messages</p>
-          <h2 style="margin:4px 0 0 0;">Syslog Log</h2>
-        </div>
-        <div class="utility-links">
-          <a href="/" role="button" class="outline secondary">Back to Dashboard</a>
-          <a href="#top" role="button" class="outline secondary">Back to top</a>
-          <a href="/alerts" role="button" class="outline secondary">Go to Alerts</a>
-        </div>
+  <section class="hero">
+    <p class="section-title">Investigate UniFi gateway syslog</p>
+    <h2 class="section-heading">Raw log explorer</h2>
+    <p class="tagline">Inspect parsed syslog entries without mixing in alerts. Filters below update the feed instantly so you can drill into the data set before any detections fire.</p>
+    <div class="controls" style="margin-top:10px;">
+      <a href="/" role="button" class="secondary">Back to Dashboard</a>
+      <a href="#top" role="button" class="secondary">Back to top</a>
+      <a href="/alerts" role="button" class="secondary">Go to Alerts</a>
     </div>
+  </section>
 
-    <form class="action-buttons" method="get" action="/logs" style="align-items:flex-end;">
-      <div>
-        <label for="search">Contains text</label>
-        <input type="search" id="search" name="search" value="{{ filters.search }}" placeholder="ssh, failed password, etc" />
-      </div>
-      <div>
-        <label for="app">App tag</label>
-        <input type="text" id="app" name="app" value="{{ filters.app }}" placeholder="sshd, sudo" />
-      </div>
-      <div>
-        <label for="host">Host</label>
-        <input type="text" id="host" name="host" value="{{ filters.host }}" placeholder="gateway hostname" />
-      </div>
-      <div>
-        <label for="source">Source label</label>
-        <input type="text" id="source" name="source" value="{{ filters.source }}" placeholder="unifi-gateway" />
-      </div>
-      <div>
-        <label for="limit">Max rows</label>
-        <input type="number" id="limit" name="limit" value="{{ filters.limit }}" min="10" max="500" />
-      </div>
-      <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="outline refresh-btn" type="submit">Apply filters</button>
-        <a href="/logs" role="button" class="outline secondary refresh-btn">Reset</a>
-        <button id="refresh-logs" class="outline refresh-btn" type="button">Refresh</button>
-        <button id="clear-logs" class="outline secondary refresh-btn" type="button">Clear All Syslog</button>
-      </div>
-    </form>
-
-    <small class="subhead">Showing {{ rows|length }} entr{{ 'y' if rows|length == 1 else 'ies' }} (limit {{ filters.limit }})</small>
-
-    <div class="log-list">
-        {% for row in rows %}
-        <article class="log-card">
-            <header>
-              <div class="log-meta">
-                <span class="pill host">{{ row.src }}</span>
-                {% if row.app %}<span class="pill app">{{ row.app }}</span>{% endif %}
-              </div>
-              <span class="log-time">{{ row.ts }} UTC</span>
-            </header>
-            <p class="log-summary">{{ row.summary }}</p>
-            <hr class="divider" />
-            <details>
-              <summary>View full payload</summary>
-              <pre><code>{{ row.message }}</code></pre>
-            </details>
-        </article>
-        {% else %}
-        <p>No syslog entries yet. Waiting for traffic from the gateway…</p>
-        {% endfor %}
+  <form class="filters" method="get" action="/logs" style="align-items:flex-end;">
+    <div>
+      <label for="search">Contains text</label>
+      <input type="search" id="search" name="search" value="{{ filters.search }}" placeholder="ssh, failed password, etc" />
     </div>
+    <div>
+      <label for="app">App tag</label>
+      <input type="text" id="app" name="app" value="{{ filters.app }}" placeholder="sshd, sudo" />
+    </div>
+    <div>
+      <label for="host">Host</label>
+      <input type="text" id="host" name="host" value="{{ filters.host }}" placeholder="gateway hostname" />
+    </div>
+    <div>
+      <label for="source">Source label</label>
+      <input type="text" id="source" name="source" value="{{ filters.source }}" placeholder="unifi-gateway" />
+    </div>
+    <div>
+      <label for="limit">Max rows</label>
+      <input type="number" id="limit" name="limit" value="{{ filters.limit }}" min="10" max="500" />
+    </div>
+    <div class="controls">
+      <button class="primary" type="submit">Apply filters</button>
+      <a href="/logs" role="button" class="secondary">Reset</a>
+      <button id="refresh-logs" class="secondary" type="button">Refresh</button>
+      <button id="clear-logs" class="secondary" type="button">Clear All Syslog</button>
+    </div>
+  </form>
+
+  <small class="section-title">Showing {{ rows|length }} entr{{ 'y' if rows|length == 1 else 'ies' }} (limit {{ filters.limit }})</small>
+
+  <div class="log-list" style="margin-top:14px;">
+      {% for row in rows %}
+      <article class="log-card">
+          <header>
+            <div class="log-meta">
+              <span class="pill host">{{ row.src }}</span>
+              {% if row.app %}<span class="pill app">{{ row.app }}</span>{% endif %}
+            </div>
+            <span class="log-time">{{ row.ts }} UTC</span>
+          </header>
+          <p class="log-summary">{{ row.summary }}</p>
+          <hr class="divider" />
+          <details>
+            <summary>View full payload</summary>
+            <pre><code>{{ row.message }}</code></pre>
+          </details>
+      </article>
+      {% else %}
+      <p class="empty">No syslog entries yet. Waiting for traffic from the gateway…</p>
+      {% endfor %}
+  </div>
 </main>
 
 <script>
