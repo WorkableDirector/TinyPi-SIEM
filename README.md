@@ -32,7 +32,7 @@ cd TinyPi
 ```
 
 ### 2. Firewall Setup (UFW)
-If you are using **UFW** (Uncomplicated Firewall) on your host machine, open the required ports before running the container. Run these commands:
+If you are using **UFW** (Uncomplicated Firewall) on your host machine, you may need to open the required ports before running the container. Run these commands:
 
 ```bash
 sudo ufw allow 8000/tcp
