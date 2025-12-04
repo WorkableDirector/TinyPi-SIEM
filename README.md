@@ -12,7 +12,7 @@ The system collects logs using syslog, stores them in SQLite, analyzes them thro
 
 
 ## Requirements
-* **Operating System:** Raspberry Pi OS Lite or any Debian-based distro
+* **Operating System:** Raspberry Pi OS or any Debian-based distro
 * Python 3.10+
 * SQLite 3
 * rsyslog or syslog-ng
