@@ -7,12 +7,12 @@ This is a very early prototype! Most features will not work yet — only the bas
 
 
 ## Overview
-The system collects logs using syslog, stores them in SQLite, analyzes them through Python scripts, and presents results in a Flask or FastAPI web dashboard. It supports real-time updates and basic security controls aligned with the CIA triad.
+The system collects logs using syslog, stores them in SQLite, analyzes them through Python scripts, and presents results in a Flask or FastAPI web dashboard. It supports real-time updates and basic security controls.
 
 
 
 ## Requirements
-* **Operating System:** Raspberry Pi OS Lite or any Ubuntu-based distro
+* **Operating System:** Raspberry Pi OS Lite or any Debian-based distro
 * Python 3.10+
 * SQLite 3
 * rsyslog or syslog-ng
