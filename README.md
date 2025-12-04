@@ -1,5 +1,5 @@
 # TinyPi-SIEM
-TinyPi is a lightweight SIEM software that allows you to view and monitor threats, vulnerabilities, and more using a Raspberry Pi for your UniFi gateway. Works on machines running an Debian based distribution as well.
+TinyPi is a lightweight SIEM software that allows you to view and monitor threats, vulnerabilities, and more using a Raspberry Pi for your UniFi gateway. Also works on machines running most Debian based distributions/
 
 ## Caution
 This is a very early prototype! Most features will not work yet — only the basic dashboard is currently functional.
